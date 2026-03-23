@@ -1,80 +1,904 @@
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-const starterDevices=[{id:'BLK-001',type:'BLOKFLOW Basic',pump:'Panasonic Aquarea 7 kW',serial:'BF-2026-001',client:'Anna Malinowska',installer:'Klima Serwis Gdańsk',nextService:'2027-02-10',status:'Aktywne'}];
-const DEFAULT_USE_LIVE_API=true;
-const APPS_SCRIPT_URL=window.__API_URL__;
-const INSTALLERS_SHEET='INSTALATORZY';
-const CLIENTS_SHEET='KLIENCI';
-const DEVICES_SHEET='URZADZENIA';
-const SERVICE_SHEET='SERWIS';
-const INSTALLERS_API=`${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(INSTALLERS_SHEET)}`;
-const CLIENTS_API=`${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(CLIENTS_SHEET)}`;
-const DEVICES_API=`${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(DEVICES_SHEET)}`;
-const SERVICE_API=`${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(SERVICE_SHEET)}`;
+const starterDevices = [
+  {
+    id: 'BLK-001',
+    type: 'BLOKFLOW Basic',
+    pump: 'Panasonic Aquarea 7 kW',
+    serial: 'BF-2026-001',
+    client: 'Anna Malinowska',
+    installer: 'Klima Serwis Gdańsk',
+    installDate: '2026-02-10',
+    nextService: '2027-02-10',
+    status: 'Aktywne',
+  },
+];
 
-const Card=({children})=><div className="card">{children}</div>;
-const CardContent=({children,className=''})=><div className={`card-body ${className}`.trim()}>{children}</div>;
-const Input=(props)=><input {...props} />;
-const Badge=({children,plan})=>{const cls=plan==='Premium'?'badge premium':plan==='Aktywny'?'badge active':plan==='Nowy'?'badge new':'badge';return <span className={cls}>{children}</span>;};
-const StatCard=({label,value})=><Card><CardContent><p className="stat-label">{label}</p><p className="stat-value">{value}</p></CardContent></Card>;
-const toYes=(v)=>{if(v===true)return true;const n=String(v??'').trim().toLowerCase();return ['tak','true','1','yes','y','premium','aktywny','nowy'].includes(n)};
-const ensureArray=(p)=>Array.isArray(p)?p:[];
-const makeId=(prefix)=>`${prefix}-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+const DEFAULT_USE_LIVE_API = true;
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFp8d5tzAy49jOFwIzkPinELhulapff0KHvBJJT0Nu68UhmvnDz5Bp85BT8VnbaXvSFQ/exec';
+const INSTALLERS_SHEET = 'INSTALATORZY';
+const CLIENTS_SHEET = 'KLIENCI';
+const DEVICES_SHEET = 'URZADZENIA';
+const SERVICE_SHEET = 'SERWIS';
 
-async function fetchSheetData(url){const r=await fetch(url,{method:'GET',redirect:'follow',headers:{Accept:'application/json, text/plain;q=0.9,*/*;q=0.8'}});const t=await r.text();if(!r.ok)throw new Error(`HTTP ${r.status}: ${t||'Brak odpowiedzi serwera'}`);const p=JSON.parse(t);if(p&&typeof p==='object'&&!Array.isArray(p)&&p.error)throw new Error(String(p.error));return ensureArray(p);}
-async function postSheetData(payload){const r=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});const t=await r.text();if(!r.ok)throw new Error(`HTTP ${r.status}: ${t||'Brak odpowiedzi serwera'}`);const p=JSON.parse(t);if(p&&typeof p==='object'&&p.ok===false)throw new Error(p.error||'Apps Script odrzucił zapis.');return p;}
-const mapInstaller=(row,index)=>({id:row['ID INSTALATORA']||`INS-${index+1}`,company:row['Nazwa Firmy']||'',owner:row['Imię i Nazwisko']||'',phone:row['Telefon']||'',email:row['E-mail']||'',city:row['Miasto']||'',region:row['Województwo']||'',plan:toYes(row['status premium'])?'Premium':toYes(row['status aktywny'])?'Aktywny':toYes(row['status nowy'])?'Nowy':'Brak',registrationDate:row['Data rejestracji']||''});
-const mapClient=(row,index)=>({id:row['ID KLIENTA']||`CLI-${index+1}`,name:row['Imię i Nazwisko']||row['Nazwa klienta']||row['Klient']||'',city:row['Miasto']||'',phone:row['Telefon']||'',address:row['Adres']||row['Adres montażu']||'',installer:row['Instalator']||row['Nazwa Firmy']||'',source:row['Źródło']||row['Zrodlo']||'Formularz',note:row['Notatka']||''});
-const mapDevice=(row,index)=>({id:row['ID URZĄDZENIA']||row['ID URZADZENIA']||`BLK-${index+1}`,type:row['Typ']||row['Typ urządzenia']||row['Typ urzadzenia']||'BLOKFLOW',client:row['Klient']||row['Imię i Nazwisko']||row['Nazwa klienta']||'',installer:row['Instalator']||row['Nazwa Firmy']||'',serial:row['Numer seryjny']||row['Nr seryjny']||row['Serial']||'',status:row['Status']||'Aktywne',pump:row['Model']||row['Pompa']||row['Model / pompa']||'',nextService:row['Termin przeglądu']||row['Termin pierwszego przeglądu']||'',note:row['Notatka']||row['Notatka montażowa']||''});
-const mapServiceTicket=(row,index)=>({id:row['ID SERWISU']||`SER-${index+1}`,client:row['Klient']||'',device:row['Urządzenie']||'',kind:row['Typ zgłoszenia']||'Serwis',priority:row['Priorytet']||'Niski',description:row['Opis']||'',preferredDate:row['Preferowany termin']||'',status:row['Status']||'Nowe'});
+const INSTALLERS_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(INSTALLERS_SHEET)}`;
+const CLIENTS_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(CLIENTS_SHEET)}`;
+const DEVICES_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(DEVICES_SHEET)}`;
+const SERVICE_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(SERVICE_SHEET)}`;
 
-export default function App(){
-const [viewMode,setViewMode]=useState('admin');const [activeTab,setActiveTab]=useState('instalatorzy');
-const [installers,setInstallers]=useState([]);const [clients,setClients]=useState([]);const [devices,setDevices]=useState(starterDevices);const [serviceTickets,setServiceTickets]=useState([]);
-const [search,setSearch]=useState('');const [loading,setLoading]=useState({installers:false,clients:false,devices:false,service:false});const [errors,setErrors]=useState({installers:'',clients:'',devices:'',service:''});
-const [isConnected,setIsConnected]=useState(true);const [useLiveApi,setUseLiveApi]=useState(DEFAULT_USE_LIVE_API);const [submitState,setSubmitState]=useState({type:'',message:''});const hasLoadedRef=useRef(false);
-const [clientForm,setClientForm]=useState({name:'',phone:'',city:'',address:'',source:'Własny klient',note:''});
-const [deviceForm,setDeviceForm]=useState({type:'BLOKFLOW Basic',client:'',serial:'',status:'Aktywne',pump:'',nextService:'',note:''});
-const [serviceForm,setServiceForm]=useState({client:'',device:'',kind:'Przegląd',priority:'Niski',description:'',preferredDate:''});
+function toYes(value) {
+  if (value === true) return true;
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return ['tak', 'true', '1', 'yes', 'y', 'premium', 'aktywny', 'nowy'].includes(normalized);
+}
 
-useEffect(()=>{setUseLiveApi(true);setIsConnected(true)},[]);
-useEffect(()=>{if(!useLiveApi||!isConnected||hasLoadedRef.current)return;let cancelled=false;hasLoadedRef.current=true;(async()=>{setLoading({installers:true,clients:true,devices:true,service:true});setErrors({installers:'',clients:'',devices:'',service:''});const [ir,cr,dr,sr]=await Promise.allSettled([fetchSheetData(INSTALLERS_API),fetchSheetData(CLIENTS_API),fetchSheetData(DEVICES_API),fetchSheetData(SERVICE_API)]);if(cancelled)return;if(ir.status==='fulfilled')setInstallers(ir.value.map(mapInstaller));else setErrors(p=>({...p,installers:ir.reason.message||'Błąd instalatorów'}));if(cr.status==='fulfilled')setClients(cr.value.map(mapClient));else setErrors(p=>({...p,clients:cr.reason.message||'Błąd klientów'}));if(dr.status==='fulfilled')setDevices(dr.value.length?dr.value.map(mapDevice):starterDevices);else setErrors(p=>({...p,devices:dr.reason.message||'Błąd urządzeń'}));if(sr.status==='fulfilled')setServiceTickets(sr.value.map(mapServiceTicket));else setErrors(p=>({...p,service:sr.reason.message||'Błąd serwisu'}));setLoading({installers:false,clients:false,devices:false,service:false});})();return()=>{cancelled=true}},[useLiveApi,isConnected]);
+function ensureArray(payload) {
+  return Array.isArray(payload) ? payload : [];
+}
 
-const filteredInstallers=useMemo(()=>{const q=search.toLowerCase().trim();if(!q)return installers;return installers.filter(i=>[i.company,i.owner,i.city,i.region,i.phone,i.email,i.plan].filter(Boolean).join(' ').toLowerCase().includes(q))},[installers,search]);
-const filteredClients=useMemo(()=>{const q=search.toLowerCase().trim();if(!q)return clients;return clients.filter(c=>[c.name,c.city,c.phone,c.installer,c.source,c.address].filter(Boolean).join(' ').toLowerCase().includes(q))},[clients,search]);
-const filteredDevices=useMemo(()=>{const q=search.toLowerCase().trim();if(!q)return devices;return devices.filter(d=>[d.type,d.client,d.installer,d.serial,d.status,d.pump].filter(Boolean).join(' ').toLowerCase().includes(q))},[devices,search]);
-const installerQuickStats=useMemo(()=>({clients:clients.length,devices:devices.length,activeDevices:devices.filter(d=>(d.status||'').toLowerCase()!=='nieaktywne').length}),[clients,devices]);
-const resetClientForm=()=>setClientForm({name:'',phone:'',city:'',address:'',source:'Własny klient',note:''});
-const resetDeviceForm=()=>setDeviceForm({type:'BLOKFLOW Basic',client:'',serial:'',status:'Aktywne',pump:'',nextService:'',note:''});
-const resetServiceForm=()=>setServiceForm({client:'',device:'',kind:'Przegląd',priority:'Niski',description:'',preferredDate:''});
+function makeId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+}
 
-async function handleSaveClient(){if(!clientForm.name.trim()){setSubmitState({type:'error',message:'Uzupełnij nazwę klienta.'});return}const record={id:makeId('CLI'),name:clientForm.name.trim(),phone:clientForm.phone.trim(),city:clientForm.city.trim(),address:clientForm.address.trim(),installer:'Moja firma instalatorska',source:clientForm.source,note:clientForm.note.trim()};try{if(useLiveApi){await postSheetData({action:'append',sheet:CLIENTS_SHEET,row:{'ID KLIENTA':record.id,'Imię i Nazwisko':record.name,'Telefon':record.phone,'Miasto':record.city,'Adres':record.address,'Instalator':record.installer,'Źródło':record.source,'Notatka':record.note}})}setClients(p=>[record,...p]);resetClientForm();setSubmitState({type:'success',message:'Klient został zapisany.'})}catch(error){setSubmitState({type:'error',message:error instanceof Error?error.message:'Nie udało się zapisać klienta.'})}}
-async function handleSaveDevice(){if(!deviceForm.client.trim()||!deviceForm.type.trim()){setSubmitState({type:'error',message:'Uzupełnij klienta i typ urządzenia.'});return}const record={id:makeId('BLK'),type:deviceForm.type.trim(),client:deviceForm.client.trim(),installer:'Moja firma instalatorska',serial:deviceForm.serial.trim(),status:deviceForm.status.trim()||'Aktywne',pump:deviceForm.pump.trim(),nextService:deviceForm.nextService.trim(),note:deviceForm.note.trim()};try{if(useLiveApi){await postSheetData({action:'append',sheet:DEVICES_SHEET,row:{'ID URZADZENIA':record.id,'Typ':record.type,'Klient':record.client,'Instalator':record.installer,'Numer seryjny':record.serial,'Status':record.status,'Model':record.pump,'Termin przeglądu':record.nextService,'Notatka montażowa':record.note}})}setDevices(p=>[record,...p]);resetDeviceForm();setSubmitState({type:'success',message:'Urządzenie zostało zapisane.'})}catch(error){setSubmitState({type:'error',message:error instanceof Error?error.message:'Nie udało się zapisać urządzenia.'})}}
-async function handleSaveService(){if(!serviceForm.client.trim()||!serviceForm.description.trim()){setSubmitState({type:'error',message:'Uzupełnij klienta i opis zgłoszenia.'});return}const record={id:makeId('SER'),client:serviceForm.client.trim(),device:serviceForm.device.trim(),kind:serviceForm.kind.trim(),priority:serviceForm.priority.trim(),description:serviceForm.description.trim(),preferredDate:serviceForm.preferredDate.trim(),status:'Nowe'};try{if(useLiveApi){await postSheetData({action:'append',sheet:SERVICE_SHEET,row:{'ID SERWISU':record.id,'Klient':record.client,'Urządzenie':record.device,'Typ zgłoszenia':record.kind,'Priorytet':record.priority,'Opis':record.description,'Preferowany termin':record.preferredDate,'Status':record.status}})}setServiceTickets(p=>[record,...p]);resetServiceForm();setSubmitState({type:'success',message:'Zgłoszenie serwisowe zostało zapisane.'})}catch(error){setSubmitState({type:'error',message:error instanceof Error?error.message:'Nie udało się wysłać zgłoszenia.'})}}
+async function fetchSheetData(url) {
+  const response = await fetch(url, {
+    method: 'GET',
+    redirect: 'follow',
+    headers: {
+      Accept: 'application/json, text/plain;q=0.9,*/*;q=0.8',
+    },
+  });
 
-return <div className="wrap">
-<div className="topbar"><div className="title"><h1>BLOKFLOW PANEL</h1><p>Jeden system, dwa widoki: admin i instalator.</p></div><div className="segmented"><button className={viewMode==='admin'?'active':''} onClick={()=>setViewMode('admin')}>Panel admina</button><button className={viewMode==='installer'?'active':''} onClick={()=>setViewMode('installer')}>Panel instalatora</button></div><Input className="search" placeholder="Szukaj..." value={search} onChange={(e)=>setSearch(e.target.value)} /></div>
-{submitState.message?<div className={`notice ${submitState.type==='error'?'error':'success'}`}>{submitState.message}</div>:null}
-{viewMode==='admin'?<>
-<div className="connect-row"><button className="connect-btn" onClick={()=>{setUseLiveApi(true);setIsConnected(true);hasLoadedRef.current=false}}>Połącz z Google Sheets</button><span className="small muted">Dane ładują się automatycznie, ten przycisk działa też jako odśwież.</span></div>
-<div className="grid-4"><StatCard label="Instalatorzy" value={installers.length} /><StatCard label="Klienci" value={clients.length} /><StatCard label="Urządzenia" value={devices.length} /><StatCard label="Aktywni / Premium" value={installers.filter(i=>i.plan==='Aktywny'||i.plan==='Premium').length} /></div>
-<div className="grid-2" style={{marginTop:16}}><Card><CardContent><p className="section-title">Szybki podgląd biznesowy</p><div className="grid-3"><div className="subcard"><div className="muted small">Nowi instalatorzy</div><div className="stat-value" style={{fontSize:24}}>{installers.filter(i=>i.plan==='Nowy').length}</div></div><div className="subcard"><div className="muted small">Instalatorzy premium</div><div className="stat-value" style={{fontSize:24}}>{installers.filter(i=>i.plan==='Premium').length}</div></div><div className="subcard"><div className="muted small">Klienci przypisani</div><div className="stat-value" style={{fontSize:24}}>{clients.filter(c=>c.installer).length}</div></div></div></CardContent></Card><Card><CardContent><p className="section-title">Szybkie akcje</p><div style={{display:'grid',gap:10}}><button className="quick-btn">Dodaj instalatora</button><button className="quick-btn">Dodaj klienta</button><button className="quick-btn">Dodaj urządzenie</button><button className="quick-btn">Przejdź do mapy partnerów</button></div></CardContent></Card></div>
-<div className="tabs"><button className={`tab-btn ${activeTab==='instalatorzy'?'active':''}`} onClick={()=>setActiveTab('instalatorzy')}>Instalatorzy</button><button className={`tab-btn ${activeTab==='klienci'?'active':''}`} onClick={()=>setActiveTab('klienci')}>Klienci</button><button className={`tab-btn ${activeTab==='urzadzenia'?'active':''}`} onClick={()=>setActiveTab('urzadzenia')}>Urządzenia</button><button className={`tab-btn ${activeTab==='serwis'?'active':''}`} onClick={()=>setActiveTab('serwis')}>Serwis</button></div>
-{activeTab==='instalatorzy'&&<div className="list">{loading.installers?<Card><CardContent className="small muted">Ładowanie instalatorów...</CardContent></Card>:errors.installers?<Card><CardContent className="small" style={{color:'#b91c1c'}}>Błąd pobierania instalatorów: {errors.installers}</CardContent></Card>:filteredInstallers.length===0?<Card><CardContent className="small muted">Brak instalatorów do wyświetlenia.</CardContent></Card>:filteredInstallers.map(i=><div className="item" key={i.id}><h4>{i.company}</h4>{i.owner?<div className="small">{i.owner}</div>:null}<div className="small">{i.city}</div><Badge plan={i.plan}>{i.plan}</Badge>{i.region?<div className="small muted" style={{marginTop:8}}>{i.region}</div>:null}{i.phone?<div className="small" style={{marginTop:8}}>{i.phone}</div>:null}{i.email?<div className="small">{i.email}</div>:null}</div>)}</div>}
-{activeTab==='klienci'&&<div className="list">{loading.clients?<Card><CardContent className="small muted">Ładowanie klientów...</CardContent></Card>:errors.clients?<Card><CardContent className="small" style={{color:'#b91c1c'}}>Błąd pobierania klientów: {errors.clients}</CardContent></Card>:filteredClients.length===0?<Card><CardContent className="small muted">Brak klientów do wyświetlenia.</CardContent></Card>:filteredClients.map(c=><div className="item" key={c.id}><h4>{c.name}</h4><div className="small">{c.city}</div>{c.phone?<div className="small">{c.phone}</div>:null}{c.installer?<div className="small">Instalator: {c.installer}</div>:null}<span className="badge">{c.source}</span></div>)}</div>}
-{activeTab==='urzadzenia'&&<div className="list">{loading.devices?<Card><CardContent className="small muted">Ładowanie urządzeń...</CardContent></Card>:errors.devices?<Card><CardContent className="small" style={{color:'#b91c1c'}}>Błąd pobierania urządzeń: {errors.devices}</CardContent></Card>:filteredDevices.length===0?<Card><CardContent className="small muted">Brak urządzeń do wyświetlenia.</CardContent></Card>:filteredDevices.map(d=><div className="item" key={d.id}><h4>{d.type}</h4><div className="small">Klient: {d.client||'Brak danych'}</div><div className="small">Instalator: {d.installer||'Brak danych'}</div><div className="small">Nr seryjny: {d.serial||'Brak danych'}</div><div className="small">Status: {d.status||'Brak danych'}</div></div>)}</div>}
-{activeTab==='serwis'&&<div className="list">{loading.service?<Card><CardContent className="small muted">Ładowanie zgłoszeń serwisowych...</CardContent></Card>:errors.service?<Card><CardContent className="small" style={{color:'#b91c1c'}}>Błąd pobierania serwisu: {errors.service}</CardContent></Card>:serviceTickets.length===0?<Card><CardContent className="small muted">Brak zgłoszeń serwisowych.</CardContent></Card>:serviceTickets.map(s=><div className="item" key={s.id}><h4>{s.kind}</h4><div className="small">Klient: {s.client}</div><div className="small">Urządzenie: {s.device}</div><div className="small">Priorytet: {s.priority}</div><div className="small muted">{s.description}</div>{s.preferredDate?<div className="tiny" style={{marginTop:8}}>Termin: {s.preferredDate}</div>:null}<div className="tiny" style={{marginTop:8}}>Status: {s.status}</div></div>)}</div>}
-</>:<div className="panel-installer">
-<div className="stats-mobile"><StatCard label="Moi klienci" value={installerQuickStats.clients} /><StatCard label="Urządzenia" value={installerQuickStats.devices} /><StatCard label="Aktywne" value={installerQuickStats.activeDevices} /></div>
-<div className="section"><CardContent><h3 className="section-title">Szybkie akcje instalatora</h3><div className="quick-grid"><button className="quick-btn">Dodaj klienta</button><button className="quick-btn">Dodaj urządzenie</button><button className="quick-btn">Zgłoś serwis</button><button className="quick-btn">Moje przypomnienia</button></div></CardContent></div>
-<div className="section"><CardContent><div><h3 className="section-title">Dodaj klienta</h3><div className="muted small">Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.</div></div><div className="field"><label>Imię i nazwisko / nazwa klienta</label><Input value={clientForm.name} onChange={(e)=>setClientForm(p=>({...p,name:e.target.value}))} placeholder="np. Anna Nowak" /></div><div className="field-row-2"><div className="field"><label>Telefon</label><Input value={clientForm.phone} onChange={(e)=>setClientForm(p=>({...p,phone:e.target.value}))} placeholder="np. 500 600 700" /></div><div className="field"><label>Miasto</label><Input value={clientForm.city} onChange={(e)=>setClientForm(p=>({...p,city:e.target.value}))} placeholder="np. Gdańsk" /></div></div><div className="field"><label>Adres montażu</label><Input value={clientForm.address} onChange={(e)=>setClientForm(p=>({...p,address:e.target.value}))} placeholder="Ulica, numer domu" /></div><div className="field"><label>Źródło klienta</label><div className="chip-row">{['Własny klient','Lead BLOKFLOW','Polecenie'].map(option=><button key={option} type="button" onClick={()=>setClientForm(p=>({...p,source:option}))} className={`chip ${clientForm.source===option?'active':''}`}>{option}</button>)}</div></div><div className="field"><label>Notatka</label><textarea value={clientForm.note} onChange={(e)=>setClientForm(p=>({...p,note:e.target.value}))} placeholder="Krótka informacja o kliencie, budynku lub planowanym montażu" /></div><div className="button-row"><button className="ghost-btn" onClick={resetClientForm}>Wyczyść</button><button className="primary-btn" onClick={handleSaveClient}>Zapisz klienta</button></div></CardContent></div>
-<div className="section"><CardContent><div><h3 className="section-title">Dodaj urządzenie</h3><div className="muted small">Drugi krok po kliencie — rejestracja BLOKFLOW lub innego urządzenia z numerem seryjnym i statusem.</div></div><div className="field"><label>Typ urządzenia</label><Input value={deviceForm.type} onChange={(e)=>setDeviceForm(p=>({...p,type:e.target.value}))} placeholder="np. BLOKFLOW Basic" /></div><div className="field"><label>Klient</label><Input value={deviceForm.client} onChange={(e)=>setDeviceForm(p=>({...p,client:e.target.value}))} placeholder="np. Anna Nowak" /></div><div className="field-row-2"><div className="field"><label>Numer seryjny</label><Input value={deviceForm.serial} onChange={(e)=>setDeviceForm(p=>({...p,serial:e.target.value}))} placeholder="np. BF-2026-001" /></div><div className="field"><label>Status</label><Input value={deviceForm.status} onChange={(e)=>setDeviceForm(p=>({...p,status:e.target.value}))} placeholder="np. Aktywne" /></div></div><div className="field"><label>Model / pompa</label><Input value={deviceForm.pump} onChange={(e)=>setDeviceForm(p=>({...p,pump:e.target.value}))} placeholder="np. Panasonic Aquarea 7 kW" /></div><div className="field"><label>Termin pierwszego przeglądu</label><Input type="date" value={deviceForm.nextService} onChange={(e)=>setDeviceForm(p=>({...p,nextService:e.target.value}))} /></div><div className="field"><label>Notatka montażowa</label><textarea value={deviceForm.note} onChange={(e)=>setDeviceForm(p=>({...p,note:e.target.value}))} placeholder="Informacje o montażu, konfiguracji, miejscu ustawienia lub uwagach serwisowych" /></div><div className="button-row"><button className="ghost-btn" onClick={resetDeviceForm}>Wyczyść</button><button className="primary-btn" onClick={handleSaveDevice}>Zapisz urządzenie</button></div></CardContent></div>
-<div className="section"><CardContent><div><h3 className="section-title">Zgłoś serwis</h3><div className="muted small">Szybkie zgłoszenie przeglądu lub awarii dla istniejącego urządzenia.</div></div><div className="field"><label>Klient</label><Input value={serviceForm.client} onChange={(e)=>setServiceForm(p=>({...p,client:e.target.value}))} placeholder="np. Anna Nowak" /></div><div className="field"><label>Urządzenie / nr seryjny</label><Input value={serviceForm.device} onChange={(e)=>setServiceForm(p=>({...p,device:e.target.value}))} placeholder="np. BF-2026-001" /></div><div className="field-row-2"><div className="field"><label>Typ zgłoszenia</label><Input value={serviceForm.kind} onChange={(e)=>setServiceForm(p=>({...p,kind:e.target.value}))} placeholder="np. Przegląd / Awaria" /></div><div className="field"><label>Priorytet</label><Input value={serviceForm.priority} onChange={(e)=>setServiceForm(p=>({...p,priority:e.target.value}))} placeholder="np. Niski / Pilny" /></div></div><div className="field"><label>Opis problemu</label><textarea value={serviceForm.description} onChange={(e)=>setServiceForm(p=>({...p,description:e.target.value}))} placeholder="Opisz problem lub zakres przeglądu" /></div><div className="field"><label>Preferowany termin</label><Input type="date" value={serviceForm.preferredDate} onChange={(e)=>setServiceForm(p=>({...p,preferredDate:e.target.value}))} /></div><div className="button-row"><button className="ghost-btn" onClick={resetServiceForm}>Wyczyść</button><button className="primary-btn" onClick={handleSaveService}>Wyślij zgłoszenie</button></div></CardContent></div>
-<div className="section"><CardContent><h3 className="section-title">Ostatnie zgłoszenia</h3><div className="list">{serviceTickets.length===0?<p className="small muted">Brak zgłoszeń do wyświetlenia.</p>:serviceTickets.slice(0,5).map(ticket=><div className="item" key={ticket.id}><h4>{ticket.kind}</h4><div className="small muted">Klient: {ticket.client}</div><div className="small muted">Priorytet: {ticket.priority}</div><div className="tiny" style={{marginTop:8}}>Status: {ticket.status}</div></div>)}</div></CardContent></div>
-<div className="section"><CardContent><h3 className="section-title">Moi klienci</h3><div className="list">{filteredClients.length===0?<p className="small muted">Brak klientów do wyświetlenia.</p>:filteredClients.slice(0,5).map(c=><div className="item" key={c.id}><h4>{c.name}</h4><div className="small muted">{c.city}</div>{c.phone?<div className="small" style={{marginTop:8}}>{c.phone}</div>:null}</div>)}</div></CardContent></div>
-<div className="section"><CardContent><h3 className="section-title">Moje urządzenia</h3><div className="list">{filteredDevices.length===0?<p className="small muted">Brak urządzeń do wyświetlenia.</p>:filteredDevices.slice(0,5).map(d=><div className="item" key={d.id}><h4>{d.type}</h4><div className="small muted">Klient: {d.client||'Brak danych'}</div><div className="small muted">Status: {d.status||'Brak danych'}</div>{d.serial?<div className="tiny" style={{marginTop:8}}>Nr seryjny: {d.serial}</div>:null}</div>)}</div></CardContent></div>
-<div className="bottom-nav"><div className="bottom-grid"><button>Start</button><button>Klienci</button><button>Urządzenia</button><button>Konto</button></div></div>
-</div>}
-</div>
+  const rawText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${rawText || 'Brak odpowiedzi serwera'}`);
+  }
+
+  try {
+    const parsed = JSON.parse(rawText);
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.error) {
+      throw new Error(String(parsed.error));
+    }
+
+    return ensureArray(parsed);
+  } catch {
+    throw new Error(`Nie udało się odczytać JSON z API. Odpowiedź: ${rawText.slice(0, 300)}`);
+  }
+}
+
+async function postSheetData(payload) {
+  const response = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const rawText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${rawText || 'Brak odpowiedzi serwera'}`);
+  }
+
+  try {
+    const parsed = JSON.parse(rawText);
+
+    if (parsed && typeof parsed === 'object' && parsed.ok === false) {
+      throw new Error(parsed.error || 'Apps Script odrzucił zapis.');
+    }
+
+    return parsed;
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error(`Nie udało się odczytać odpowiedzi POST. Odpowiedź: ${rawText}`);
+  }
+}
+
+function mapInstaller(row, index) {
+  return {
+    id: row['ID INSTALATORA'] || `INS-${index + 1}`,
+    company: row['Nazwa Firmy'] || '',
+    owner: row['Imię i Nazwisko'] || '',
+    phone: row['Telefon'] || '',
+    email: row['E-mail'] || '',
+    city: row['Miasto'] || '',
+    region: row['Województwo'] || '',
+    plan: toYes(row['status premium'])
+      ? 'Premium'
+      : toYes(row['status aktywny'])
+        ? 'Aktywny'
+        : toYes(row['status nowy'])
+          ? 'Nowy'
+          : 'Brak',
+    registrationDate: row['Data rejestracji'] || '',
+  };
+}
+
+function mapClient(row, index) {
+  return {
+    id: row['ID KLIENTA'] || `CLI-${index + 1}`,
+    name: row['Imię i Nazwisko'] || row['Nazwa klienta'] || row['Klient'] || '',
+    city: row['Miasto'] || '',
+    phone: row['Telefon'] || '',
+    address: row['Adres'] || row['Adres montażu'] || '',
+    installer: row['Instalator'] || row['Nazwa Firmy'] || '',
+    source: row['Źródło'] || row['Zrodlo'] || 'Formularz',
+    note: row['Notatka'] || '',
+  };
+}
+
+function mapDevice(row, index) {
+  return {
+    id: row['ID URZĄDZENIA'] || row['ID URZADZENIA'] || `BLK-${index + 1}`,
+    type: row['Typ'] || row['Typ urządzenia'] || row['Typ urzadzenia'] || 'BLOKFLOW',
+    client: row['Klient'] || row['Imię i Nazwisko'] || row['Nazwa klienta'] || '',
+    installer: row['Instalator'] || row['Nazwa Firmy'] || '',
+    serial: row['Numer seryjny'] || row['Nr seryjny'] || row['Serial'] || '',
+    status: row['Status'] || 'Aktywne',
+    pump: row['Model'] || row['Pompa'] || row['Model / pompa'] || '',
+    nextService: row['Termin przeglądu'] || row['Termin pierwszego przeglądu'] || '',
+    note: row['Notatka'] || row['Notatka montażowa'] || '',
+  };
+}
+
+function mapServiceTicket(row, index) {
+  return {
+    id: row['ID SERWISU'] || `SER-${index + 1}`,
+    client: row['Klient'] || '',
+    device: row['Urządzenie'] || '',
+    kind: row['Typ zgłoszenia'] || 'Serwis',
+    priority: row['Priorytet'] || 'Niski',
+    description: row['Opis'] || '',
+    preferredDate: row['Preferowany termin'] || '',
+    status: row['Status'] || 'Nowe',
+  };
+}
+
+function StatCard({ label, value }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <p className="text-sm text-slate-500">{label}</p>
+        <p className="text-2xl font-bold mt-1">{value}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function BlokflowPanel() {
+  const [viewMode, setViewMode] = useState('admin');
+  const [installers, setInstallers] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [devices, setDevices] = useState(starterDevices);
+  const [serviceTickets, setServiceTickets] = useState([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState({ installers: false, clients: false, devices: false, service: false });
+  const [errors, setErrors] = useState({ installers: '', clients: '', devices: '', service: '' });
+  const [isConnected, setIsConnected] = useState(true);
+  const [useLiveApi, setUseLiveApi] = useState(DEFAULT_USE_LIVE_API);
+  const [submitState, setSubmitState] = useState({ type: '', message: '' });
+  const hasLoadedRef = useRef(false);
+
+  const [clientForm, setClientForm] = useState({
+    name: '',
+    phone: '',
+    city: '',
+    address: '',
+    source: 'Własny klient',
+    note: '',
+  });
+
+  const [deviceForm, setDeviceForm] = useState({
+    type: 'BLOKFLOW Basic',
+    client: '',
+    serial: '',
+    status: 'Aktywne',
+    pump: '',
+    nextService: '',
+    note: '',
+  });
+
+  const [serviceForm, setServiceForm] = useState({
+    client: '',
+    device: '',
+    kind: 'Przegląd',
+    priority: 'Niski',
+    description: '',
+    preferredDate: '',
+  });
+
+  useEffect(() => {
+    if (DEFAULT_USE_LIVE_API) {
+      setUseLiveApi(true);
+      setIsConnected(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!useLiveApi || !isConnected || hasLoadedRef.current) return;
+
+    let cancelled = false;
+    hasLoadedRef.current = true;
+
+    async function loadAll() {
+      setLoading({ installers: true, clients: true, devices: true, service: true });
+      setErrors({ installers: '', clients: '', devices: '', service: '' });
+
+      const [installersResult, clientsResult, devicesResult, serviceResult] = await Promise.allSettled([
+        fetchSheetData(INSTALLERS_API),
+        fetchSheetData(CLIENTS_API),
+        fetchSheetData(DEVICES_API),
+        fetchSheetData(SERVICE_API),
+      ]);
+
+      if (cancelled) return;
+
+      if (installersResult.status === 'fulfilled') {
+        setInstallers(installersResult.value.map(mapInstaller));
+      } else {
+        setInstallers([]);
+        setErrors((prev) => ({
+          ...prev,
+          installers: installersResult.reason instanceof Error ? installersResult.reason.message : 'Nieznany błąd pobierania instalatorów.',
+        }));
+      }
+
+      if (clientsResult.status === 'fulfilled') {
+        setClients(clientsResult.value.map(mapClient));
+      } else {
+        setClients([]);
+        setErrors((prev) => ({
+          ...prev,
+          clients: clientsResult.reason instanceof Error ? clientsResult.reason.message : 'Nieznany błąd pobierania klientów.',
+        }));
+      }
+
+      if (devicesResult.status === 'fulfilled') {
+        setDevices(devicesResult.value.length > 0 ? devicesResult.value.map(mapDevice) : starterDevices);
+      } else {
+        setDevices(starterDevices);
+        setErrors((prev) => ({
+          ...prev,
+          devices: devicesResult.reason instanceof Error ? devicesResult.reason.message : 'Nieznany błąd pobierania urządzeń.',
+        }));
+      }
+
+      if (serviceResult.status === 'fulfilled') {
+        setServiceTickets(serviceResult.value.map(mapServiceTicket));
+      } else {
+        setServiceTickets([]);
+        setErrors((prev) => ({
+          ...prev,
+          service: serviceResult.reason instanceof Error ? serviceResult.reason.message : 'Nieznany błąd pobierania serwisu.',
+        }));
+      }
+
+      setLoading({ installers: false, clients: false, devices: false, service: false });
+    }
+
+    loadAll();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnected, useLiveApi]);
+
+  const filteredInstallers = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return installers;
+    return installers.filter((i) =>
+      [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan].filter(Boolean).join(' ').toLowerCase().includes(q)
+    );
+  }, [installers, search]);
+
+  const filteredClients = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return clients;
+    return clients.filter((c) =>
+      [c.name, c.city, c.phone, c.installer, c.source, c.address].filter(Boolean).join(' ').toLowerCase().includes(q)
+    );
+  }, [clients, search]);
+
+  const filteredDevices = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return devices;
+    return devices.filter((d) =>
+      [d.type, d.client, d.installer, d.serial, d.status, d.pump].filter(Boolean).join(' ').toLowerCase().includes(q)
+    );
+  }, [devices, search]);
+
+  const installerQuickStats = useMemo(() => {
+    const activeDevices = devices.filter((d) => (d.status || '').toLowerCase() !== 'nieaktywne').length;
+    return { clients: clients.length, devices: devices.length, activeDevices };
+  }, [clients, devices]);
+
+  function resetClientForm() {
+    setClientForm({ name: '', phone: '', city: '', address: '', source: 'Własny klient', note: '' });
+  }
+
+  function resetDeviceForm() {
+    setDeviceForm({ type: 'BLOKFLOW Basic', client: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
+  }
+
+  function resetServiceForm() {
+    setServiceForm({ client: '', device: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '' });
+  }
+
+  async function handleSaveClient() {
+    if (!clientForm.name.trim()) {
+      setSubmitState({ type: 'error', message: 'Uzupełnij nazwę klienta.' });
+      return;
+    }
+
+    const record = {
+      id: makeId('CLI'),
+      name: clientForm.name.trim(),
+      phone: clientForm.phone.trim(),
+      city: clientForm.city.trim(),
+      address: clientForm.address.trim(),
+      installer: 'Moja firma instalatorska',
+      source: clientForm.source,
+      note: clientForm.note.trim(),
+    };
+
+    try {
+      if (useLiveApi) {
+        await postSheetData({
+          action: 'append',
+          sheet: CLIENTS_SHEET,
+          row: {
+            'ID KLIENTA': record.id,
+            'Imię i Nazwisko': record.name,
+            'Telefon': record.phone,
+            'Miasto': record.city,
+            'Adres': record.address,
+            'Instalator': record.installer,
+            'Źródło': record.source,
+            'Notatka': record.note,
+          },
+        });
+      }
+
+      setClients((prev) => [record, ...prev]);
+      resetClientForm();
+      setSubmitState({ type: 'success', message: 'Klient został zapisany.' });
+    } catch (error) {
+      setSubmitState({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Nie udało się zapisać klienta.',
+      });
+    }
+  }
+
+  async function handleSaveDevice() {
+    if (!deviceForm.client.trim() || !deviceForm.type.trim()) {
+      setSubmitState({ type: 'error', message: 'Uzupełnij klienta i typ urządzenia.' });
+      return;
+    }
+
+    const record = {
+      id: makeId('BLK'),
+      type: deviceForm.type.trim(),
+      client: deviceForm.client.trim(),
+      installer: 'Moja firma instalatorska',
+      serial: deviceForm.serial.trim(),
+      status: deviceForm.status.trim() || 'Aktywne',
+      pump: deviceForm.pump.trim(),
+      nextService: deviceForm.nextService.trim(),
+      note: deviceForm.note.trim(),
+    };
+
+    try {
+      if (useLiveApi) {
+        await postSheetData({
+          action: 'append',
+          sheet: DEVICES_SHEET,
+          row: {
+            'ID URZADZENIA': record.id,
+            'Typ': record.type,
+            'Klient': record.client,
+            'Instalator': record.installer,
+            'Numer seryjny': record.serial,
+            'Status': record.status,
+            'Model': record.pump,
+            'Termin przeglądu': record.nextService,
+            'Notatka montażowa': record.note,
+          },
+        });
+      }
+
+      setDevices((prev) => [record, ...prev]);
+      resetDeviceForm();
+      setSubmitState({ type: 'success', message: 'Urządzenie zostało zapisane.' });
+    } catch (error) {
+      setSubmitState({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Nie udało się zapisać urządzenia.',
+      });
+    }
+  }
+
+  async function handleSaveService() {
+    if (!serviceForm.client.trim() || !serviceForm.description.trim()) {
+      setSubmitState({ type: 'error', message: 'Uzupełnij klienta i opis zgłoszenia.' });
+      return;
+    }
+
+    const record = {
+      id: makeId('SER'),
+      client: serviceForm.client.trim(),
+      device: serviceForm.device.trim(),
+      kind: serviceForm.kind.trim(),
+      priority: serviceForm.priority.trim(),
+      description: serviceForm.description.trim(),
+      preferredDate: serviceForm.preferredDate.trim(),
+      status: 'Nowe',
+    };
+
+    try {
+      if (useLiveApi) {
+        await postSheetData({
+          action: 'append',
+          sheet: SERVICE_SHEET,
+          row: {
+            'ID SERWISU': record.id,
+            'Klient': record.client,
+            'Urządzenie': record.device,
+            'Typ zgłoszenia': record.kind,
+            'Priorytet': record.priority,
+            'Opis': record.description,
+            'Preferowany termin': record.preferredDate,
+            'Status': record.status,
+          },
+        });
+      }
+
+      setServiceTickets((prev) => [record, ...prev]);
+      resetServiceForm();
+      setSubmitState({ type: 'success', message: 'Zgłoszenie serwisowe zostało zapisane.' });
+    } catch (error) {
+      setSubmitState({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Nie udało się wysłać zgłoszenia.',
+      });
+    }
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex flex-wrap justify-between items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">BLOKFLOW PANEL</h1>
+          <p className="text-sm text-slate-500 mt-1">Jeden system, dwa widoki: admin i instalator.</p>
+        </div>
+
+        <div className="flex items-center gap-2 rounded-lg border p-1 bg-white">
+          <button
+            type="button"
+            onClick={() => setViewMode('admin')}
+            className={`px-3 py-2 rounded-md text-sm ${viewMode === 'admin' ? 'bg-black text-white' : 'text-slate-600'}`}
+          >
+            Panel admina
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('installer')}
+            className={`px-3 py-2 rounded-md text-sm ${viewMode === 'installer' ? 'bg-black text-white' : 'text-slate-600'}`}
+          >
+            Panel instalatora
+          </button>
+        </div>
+
+        <Input placeholder="Szukaj..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+
+      {submitState.message ? (
+        <Card>
+          <CardContent className={`p-4 text-sm ${submitState.type === 'error' ? 'text-red-600' : 'text-emerald-700'}`}>
+            {submitState.message}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {viewMode === 'admin' ? (
+        <>
+          <div className="flex flex-wrap gap-3 items-center">
+            <button
+              type="button"
+              onClick={() => {
+                setUseLiveApi(true);
+                setIsConnected(true);
+                hasLoadedRef.current = false;
+              }}
+              className="px-4 py-2 rounded-md text-white text-sm bg-black"
+            >
+              Połącz z Google Sheets
+            </button>
+            <p className="text-sm text-slate-500">Dane ładują się automatycznie, ten przycisk działa też jako odśwież.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <StatCard label="Instalatorzy" value={installers.length} />
+            <StatCard label="Klienci" value={clients.length} />
+            <StatCard label="Urządzenia" value={devices.length} />
+            <StatCard label="Aktywni / Premium" value={installers.filter((i) => i.plan === 'Aktywny' || i.plan === 'Premium').length} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <p className="font-semibold mb-3">Szybki podgląd biznesowy</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-slate-500">Nowi instalatorzy</p>
+                    <p className="text-xl font-semibold mt-1">{installers.filter((i) => i.plan === 'Nowy').length}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-slate-500">Instalatorzy premium</p>
+                    <p className="text-xl font-semibold mt-1">{installers.filter((i) => i.plan === 'Premium').length}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-slate-500">Klienci przypisani</p>
+                    <p className="text-xl font-semibold mt-1">{clients.filter((c) => c.installer).length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4">
+                <p className="font-semibold mb-3">Szybkie akcje</p>
+                <div className="space-y-2">
+                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Dodaj instalatora</button>
+                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Dodaj klienta</button>
+                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Dodaj urządzenie</button>
+                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Przejdź do mapy partnerów</button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Tabs defaultValue="instalatorzy">
+            <TabsList>
+              <TabsTrigger value="instalatorzy">Instalatorzy</TabsTrigger>
+              <TabsTrigger value="klienci">Klienci</TabsTrigger>
+              <TabsTrigger value="urzadzenia">Urządzenia</TabsTrigger>
+              <TabsTrigger value="serwis">Serwis</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="instalatorzy" className="space-y-3">
+              {loading.installers ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie instalatorów...</CardContent></Card>
+              ) : errors.installers ? (
+                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania instalatorów: {errors.installers}<div className="mt-2 break-all text-xs text-slate-500">{INSTALLERS_API}</div></CardContent></Card>
+              ) : filteredInstallers.length === 0 ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Brak instalatorów do wyświetlenia.</CardContent></Card>
+              ) : (
+                filteredInstallers.map((i) => (
+                  <Card key={i.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{i.company}</p>
+                      {i.owner ? <p className="text-sm">{i.owner}</p> : null}
+                      <p className="text-sm">{i.city}</p>
+                      <Badge variant={i.plan === 'Premium' ? 'default' : 'secondary'}>{i.plan}</Badge>
+                      {i.region ? <p className="text-sm text-slate-500 mt-1">{i.region}</p> : null}
+                      {i.registrationDate ? <p className="text-xs text-slate-500">Rejestracja: {i.registrationDate}</p> : null}
+                      {i.phone ? <p className="text-sm mt-1">{i.phone}</p> : null}
+                      {i.email ? <p className="text-sm">{i.email}</p> : null}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="klienci" className="space-y-3">
+              {loading.clients ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie klientów...</CardContent></Card>
+              ) : errors.clients ? (
+                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania klientów: {errors.clients}<div className="mt-2 break-all text-xs text-slate-500">{CLIENTS_API}</div></CardContent></Card>
+              ) : filteredClients.length === 0 ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Brak klientów do wyświetlenia.</CardContent></Card>
+              ) : (
+                filteredClients.map((c) => (
+                  <Card key={c.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{c.name}</p>
+                      <p className="text-sm">{c.city}</p>
+                      {c.phone ? <p className="text-sm">{c.phone}</p> : null}
+                      {c.installer ? <p className="text-sm">Instalator: {c.installer}</p> : null}
+                      <Badge>{c.source}</Badge>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="urzadzenia" className="space-y-3">
+              {loading.devices ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie urządzeń...</CardContent></Card>
+              ) : errors.devices ? (
+                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania urządzeń: {errors.devices}<div className="mt-2 break-all text-xs text-slate-500">{DEVICES_API}</div></CardContent></Card>
+              ) : filteredDevices.length === 0 ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Brak urządzeń do wyświetlenia.</CardContent></Card>
+              ) : (
+                filteredDevices.map((d) => (
+                  <Card key={d.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{d.type}</p>
+                      <p className="text-sm">Klient: {d.client || 'Brak danych'}</p>
+                      <p className="text-sm">Instalator: {d.installer || 'Brak danych'}</p>
+                      <p className="text-sm">Nr seryjny: {d.serial || 'Brak danych'}</p>
+                      <p className="text-sm">Status: {d.status || 'Brak danych'}</p>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="serwis" className="space-y-3">
+              {loading.service ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie zgłoszeń serwisowych...</CardContent></Card>
+              ) : errors.service ? (
+                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania serwisu: {errors.service}<div className="mt-2 break-all text-xs text-slate-500">{SERVICE_API}</div></CardContent></Card>
+              ) : serviceTickets.length === 0 ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Brak zgłoszeń serwisowych.</CardContent></Card>
+              ) : (
+                serviceTickets.map((s) => (
+                  <Card key={s.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{s.kind}</p>
+                      <p className="text-sm">Klient: {s.client}</p>
+                      <p className="text-sm">Urządzenie: {s.device}</p>
+                      <p className="text-sm">Priorytet: {s.priority}</p>
+                      <p className="text-sm text-slate-500">{s.description}</p>
+                      {s.preferredDate ? <p className="text-xs text-slate-400 mt-1">Termin: {s.preferredDate}</p> : null}
+                      <p className="text-xs text-slate-400 mt-1">Status: {s.status}</p>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </TabsContent>
+          </Tabs>
+        </>
+      ) : (
+        <div className="space-y-4 max-w-md mx-auto">
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard label="Moi klienci" value={installerQuickStats.clients} />
+            <StatCard label="Urządzenia" value={installerQuickStats.devices} />
+            <StatCard label="Aktywne" value={installerQuickStats.activeDevices} />
+          </div>
+
+          <Card>
+            <CardContent className="p-4">
+              <p className="font-semibold mb-3">Szybkie akcje instalatora</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => document.getElementById('clientForm')?.scrollIntoView({ behavior: 'smooth' })} type="button" className="rounded-xl border px-3 py-4 text-sm text-left bg-slate-50">Dodaj klienta</button>
+                <button onClick={() => document.getElementById('deviceForm')?.scrollIntoView({ behavior: 'smooth' })} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Dodaj urządzenie</button>
+                <button onClick={() => document.getElementById('serviceForm')?.scrollIntoView({ behavior: 'smooth' })} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Zgłoś serwis</button>
+                <button type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Moje przypomnienia</button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card id="clientForm">
+            <CardContent className="p-4 space-y-4">
+              <div>
+                <p className="font-semibold">Dodaj klienta</p>
+                <p className="text-sm text-slate-500 mt-1">Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.</p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium">Imię i nazwisko / nazwa klienta</label>
+                  <Input placeholder="np. Anna Nowak" className="mt-1" value={clientForm.name} onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-medium">Telefon</label>
+                    <Input placeholder="np. 500 600 700" className="mt-1" value={clientForm.phone} onChange={(e) => setClientForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Miasto</label>
+                    <Input placeholder="np. Gdańsk" className="mt-1" value={clientForm.city} onChange={(e) => setClientForm((prev) => ({ ...prev, city: e.target.value }))} />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Adres montażu</label>
+                  <Input placeholder="Ulica, numer domu" className="mt-1" value={clientForm.address} onChange={(e) => setClientForm((prev) => ({ ...prev, address: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Źródło klienta</label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {['Własny klient', 'Lead BLOKFLOW', 'Polecenie'].map((option) => (
+                      <button key={option} type="button" onClick={() => setClientForm((prev) => ({ ...prev, source: option }))} className={`rounded-full border px-3 py-1 text-xs ${clientForm.source === option ? 'bg-black text-white' : 'bg-white'}`}>
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Notatka</label>
+                  <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Krótka informacja o kliencie, budynku lub planowanym montażu" value={clientForm.note} onChange={(e) => setClientForm((prev) => ({ ...prev, note: e.target.value }))} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetClientForm}>Wyczyść</button>
+                <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveClient}>Zapisz klienta</button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card id="deviceForm">
+            <CardContent className="p-4 space-y-4">
+              <div>
+                <p className="font-semibold">Dodaj urządzenie</p>
+                <p className="text-sm text-slate-500 mt-1">Drugi krok po kliencie — rejestracja BLOKFLOW lub innego urządzenia z numerem seryjnym i statusem.</p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium">Typ urządzenia</label>
+                  <Input placeholder="np. BLOKFLOW Basic" className="mt-1" value={deviceForm.type} onChange={(e) => setDeviceForm((prev) => ({ ...prev, type: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Klient</label>
+                  <Input placeholder="np. Anna Nowak" className="mt-1" value={deviceForm.client} onChange={(e) => setDeviceForm((prev) => ({ ...prev, client: e.target.value }))} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-medium">Numer seryjny</label>
+                    <Input placeholder="np. BF-2026-001" className="mt-1" value={deviceForm.serial} onChange={(e) => setDeviceForm((prev) => ({ ...prev, serial: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Status</label>
+                    <Input placeholder="np. Aktywne" className="mt-1" value={deviceForm.status} onChange={(e) => setDeviceForm((prev) => ({ ...prev, status: e.target.value }))} />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Model / pompa</label>
+                  <Input placeholder="np. Panasonic Aquarea 7 kW" className="mt-1" value={deviceForm.pump} onChange={(e) => setDeviceForm((prev) => ({ ...prev, pump: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Termin pierwszego przeglądu</label>
+                  <Input type="date" className="mt-1" value={deviceForm.nextService} onChange={(e) => setDeviceForm((prev) => ({ ...prev, nextService: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Notatka montażowa</label>
+                  <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Informacje o montażu, konfiguracji, miejscu ustawienia lub uwagach serwisowych" value={deviceForm.note} onChange={(e) => setDeviceForm((prev) => ({ ...prev, note: e.target.value }))} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetDeviceForm}>Wyczyść</button>
+                <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveDevice}>Zapisz urządzenie</button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card id="serviceForm">
+            <CardContent className="p-4 space-y-4">
+              <div>
+                <p className="font-semibold">Zgłoś serwis</p>
+                <p className="text-sm text-slate-500 mt-1">Szybkie zgłoszenie przeglądu lub awarii dla istniejącego urządzenia.</p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium">Klient</label>
+                  <Input placeholder="np. Anna Nowak" className="mt-1" value={serviceForm.client} onChange={(e) => setServiceForm((prev) => ({ ...prev, client: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Urządzenie / nr seryjny</label>
+                  <Input placeholder="np. BF-2026-001" className="mt-1" value={serviceForm.device} onChange={(e) => setServiceForm((prev) => ({ ...prev, device: e.target.value }))} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-medium">Typ zgłoszenia</label>
+                    <Input placeholder="np. Przegląd / Awaria" className="mt-1" value={serviceForm.kind} onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Priorytet</label>
+                    <Input placeholder="np. Niski / Pilny" className="mt-1" value={serviceForm.priority} onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))} />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Opis problemu</label>
+                  <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Opisz problem lub zakres przeglądu" value={serviceForm.description} onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Preferowany termin</label>
+                  <Input type="date" className="mt-1" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetServiceForm}>Wyczyść</button>
+                <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveService}>Wyślij zgłoszenie</button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <p className="font-semibold mb-3">Ostatnie zgłoszenia</p>
+              <div className="space-y-3">
+                {serviceTickets.length === 0 ? (
+                  <p className="text-sm text-slate-500">Brak zgłoszeń do wyświetlenia.</p>
+                ) : (
+                  serviceTickets.slice(0, 5).map((ticket) => (
+                    <div key={ticket.id} className="rounded-xl border p-3">
+                      <p className="font-medium">{ticket.kind}</p>
+                      <p className="text-sm text-slate-500">Klient: {ticket.client}</p>
+                      <p className="text-sm text-slate-500">Priorytet: {ticket.priority}</p>
+                      <p className="text-xs text-slate-400 mt-1">Status: {ticket.status}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <p className="font-semibold mb-3">Moi klienci</p>
+              <div className="space-y-3">
+                {filteredClients.length === 0 ? (
+                  <p className="text-sm text-slate-500">Brak klientów do wyświetlenia.</p>
+                ) : (
+                  filteredClients.slice(0, 5).map((c) => (
+                    <div key={c.id} className="rounded-xl border p-3">
+                      <p className="font-medium">{c.name}</p>
+                      <p className="text-sm text-slate-500">{c.city}</p>
+                      {c.phone ? <p className="text-sm mt-1">{c.phone}</p> : null}
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <p className="font-semibold mb-3">Moje urządzenia</p>
+              <div className="space-y-3">
+                {filteredDevices.length === 0 ? (
+                  <p className="text-sm text-slate-500">Brak urządzeń do wyświetlenia.</p>
+                ) : (
+                  filteredDevices.slice(0, 5).map((d) => (
+                    <div key={d.id} className="rounded-xl border p-3">
+                      <p className="font-medium">{d.type}</p>
+                      <p className="text-sm text-slate-500">Klient: {d.client || 'Brak danych'}</p>
+                      <p className="text-sm text-slate-500">Status: {d.status || 'Brak danych'}</p>
+                      {d.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {d.serial}</p> : null}
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
 }
