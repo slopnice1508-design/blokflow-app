@@ -18,6 +18,7 @@ const starterDevices = [
   },
 ];
 
+// tryb API sterowany dynamicznie (żeby uniknąć pętli zgód w canvas)
 const DEFAULT_USE_LIVE_API = true;
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFp8d5tzAy49jOFwIzkPinELhulapff0KHvBJJT0Nu68UhmvnDz5Bp85BT8VnbaXvSFQ/exec';
 const INSTALLERS_SHEET = 'INSTALATORZY';
@@ -67,7 +68,7 @@ async function fetchSheetData(url) {
     }
 
     return ensureArray(parsed);
-  } catch {
+  } catch (error) {
     throw new Error(`Nie udało się odczytać JSON z API. Odpowiedź: ${rawText.slice(0, 300)}`);
   }
 }
@@ -96,7 +97,9 @@ async function postSheetData(payload) {
 
     return parsed;
   } catch (error) {
-    if (error instanceof Error) throw error;
+    if (error instanceof Error) {
+      throw error;
+    }
     throw new Error(`Nie udało się odczytać odpowiedzi POST. Odpowiedź: ${rawText}`);
   }
 }
@@ -186,6 +189,14 @@ export default function BlokflowPanel() {
   const [submitState, setSubmitState] = useState({ type: '', message: '' });
   const hasLoadedRef = useRef(false);
 
+  // AUTO POŁĄCZENIE PRZY STARCIE (bez klikania)
+  useEffect(() => {
+    if (DEFAULT_USE_LIVE_API) {
+      setUseLiveApi(true);
+      setIsConnected(true);
+    }
+  }, []);
+
   const [clientForm, setClientForm] = useState({
     name: '',
     phone: '',
@@ -215,13 +226,6 @@ export default function BlokflowPanel() {
   });
 
   useEffect(() => {
-    if (DEFAULT_USE_LIVE_API) {
-      setUseLiveApi(true);
-      setIsConnected(true);
-    }
-  }, []);
-
-  useEffect(() => {
     if (!useLiveApi || !isConnected || hasLoadedRef.current) return;
 
     let cancelled = false;
@@ -246,7 +250,9 @@ export default function BlokflowPanel() {
         setInstallers([]);
         setErrors((prev) => ({
           ...prev,
-          installers: installersResult.reason instanceof Error ? installersResult.reason.message : 'Nieznany błąd pobierania instalatorów.',
+          installers: installersResult.reason instanceof Error
+            ? installersResult.reason.message
+            : 'Nieznany błąd pobierania instalatorów.',
         }));
       }
 
@@ -256,7 +262,9 @@ export default function BlokflowPanel() {
         setClients([]);
         setErrors((prev) => ({
           ...prev,
-          clients: clientsResult.reason instanceof Error ? clientsResult.reason.message : 'Nieznany błąd pobierania klientów.',
+          clients: clientsResult.reason instanceof Error
+            ? clientsResult.reason.message
+            : 'Nieznany błąd pobierania klientów.',
         }));
       }
 
@@ -266,7 +274,9 @@ export default function BlokflowPanel() {
         setDevices(starterDevices);
         setErrors((prev) => ({
           ...prev,
-          devices: devicesResult.reason instanceof Error ? devicesResult.reason.message : 'Nieznany błąd pobierania urządzeń.',
+          devices: devicesResult.reason instanceof Error
+            ? devicesResult.reason.message
+            : 'Nieznany błąd pobierania urządzeń.',
         }));
       }
 
@@ -276,7 +286,9 @@ export default function BlokflowPanel() {
         setServiceTickets([]);
         setErrors((prev) => ({
           ...prev,
-          service: serviceResult.reason instanceof Error ? serviceResult.reason.message : 'Nieznany błąd pobierania serwisu.',
+          service: serviceResult.reason instanceof Error
+            ? serviceResult.reason.message
+            : 'Nieznany błąd pobierania serwisu.',
         }));
       }
 
@@ -288,13 +300,17 @@ export default function BlokflowPanel() {
     return () => {
       cancelled = true;
     };
-  }, [isConnected, useLiveApi]);
+  }, [isConnected]);
 
   const filteredInstallers = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return installers;
     return installers.filter((i) =>
-      [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan].filter(Boolean).join(' ').toLowerCase().includes(q)
+      [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
     );
   }, [installers, search]);
 
@@ -302,7 +318,11 @@ export default function BlokflowPanel() {
     const q = search.toLowerCase().trim();
     if (!q) return clients;
     return clients.filter((c) =>
-      [c.name, c.city, c.phone, c.installer, c.source, c.address].filter(Boolean).join(' ').toLowerCase().includes(q)
+      [c.name, c.city, c.phone, c.installer, c.source, c.address]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
     );
   }, [clients, search]);
 
@@ -310,25 +330,55 @@ export default function BlokflowPanel() {
     const q = search.toLowerCase().trim();
     if (!q) return devices;
     return devices.filter((d) =>
-      [d.type, d.client, d.installer, d.serial, d.status, d.pump].filter(Boolean).join(' ').toLowerCase().includes(q)
+      [d.type, d.client, d.installer, d.serial, d.status, d.pump]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
     );
   }, [devices, search]);
 
   const installerQuickStats = useMemo(() => {
     const activeDevices = devices.filter((d) => (d.status || '').toLowerCase() !== 'nieaktywne').length;
-    return { clients: clients.length, devices: devices.length, activeDevices };
+    return {
+      clients: clients.length,
+      devices: devices.length,
+      activeDevices,
+    };
   }, [clients, devices]);
 
   function resetClientForm() {
-    setClientForm({ name: '', phone: '', city: '', address: '', source: 'Własny klient', note: '' });
+    setClientForm({
+      name: '',
+      phone: '',
+      city: '',
+      address: '',
+      source: 'Własny klient',
+      note: '',
+    });
   }
 
   function resetDeviceForm() {
-    setDeviceForm({ type: 'BLOKFLOW Basic', client: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
+    setDeviceForm({
+      type: 'BLOKFLOW Basic',
+      client: '',
+      serial: '',
+      status: 'Aktywne',
+      pump: '',
+      nextService: '',
+      note: '',
+    });
   }
 
   function resetServiceForm() {
-    setServiceForm({ client: '', device: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '' });
+    setServiceForm({
+      client: '',
+      device: '',
+      kind: 'Przegląd',
+      priority: 'Niski',
+      description: '',
+      preferredDate: '',
+    });
   }
 
   async function handleSaveClient() {
@@ -350,7 +400,7 @@ export default function BlokflowPanel() {
 
     try {
       if (useLiveApi) {
-        await postSheetData({
+        const result = await postSheetData({
           action: 'append',
           sheet: CLIENTS_SHEET,
           row: {
@@ -364,12 +414,15 @@ export default function BlokflowPanel() {
             'Notatka': record.note,
           },
         });
+
+        console.log('ODPOWIEDŹ Z APPS SCRIPT:', result);
       }
 
       setClients((prev) => [record, ...prev]);
       resetClientForm();
       setSubmitState({ type: 'success', message: 'Klient został zapisany.' });
     } catch (error) {
+      console.error('BŁĄD ZAPISU:', error);
       setSubmitState({
         type: 'error',
         message: error instanceof Error ? error.message : 'Nie udało się zapisać klienta.',
@@ -496,7 +549,11 @@ export default function BlokflowPanel() {
           </button>
         </div>
 
-        <Input placeholder="Szukaj..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input
+          placeholder="Szukaj..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
       {submitState.message ? (
@@ -512,16 +569,15 @@ export default function BlokflowPanel() {
           <div className="flex flex-wrap gap-3 items-center">
             <button
               type="button"
-              onClick={() => {
-                setUseLiveApi(true);
-                setIsConnected(true);
-                hasLoadedRef.current = false;
-              }}
+              onClick={() => { setUseLiveApi(true); setIsConnected(true); }}
+              disabled={false}
               className="px-4 py-2 rounded-md text-white text-sm bg-black"
             >
               Połącz z Google Sheets
             </button>
-            <p className="text-sm text-slate-500">Dane ładują się automatycznie, ten przycisk działa też jako odśwież.</p>
+            <p className="text-sm text-slate-500">
+              Kliknij, aby połączyć z Google Sheets (może wyskoczyć zgoda – to normalne).
+            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -614,6 +670,7 @@ export default function BlokflowPanel() {
                       {c.phone ? <p className="text-sm">{c.phone}</p> : null}
                       {c.installer ? <p className="text-sm">Instalator: {c.installer}</p> : null}
                       <Badge>{c.source}</Badge>
+                      {c.name ? <div className="mt-2 text-xs text-slate-500">Karta klienta gotowa do rozbudowy o zgłoszenia i historię serwisową.</div> : null}
                     </CardContent>
                   </Card>
                 ))
@@ -636,6 +693,7 @@ export default function BlokflowPanel() {
                       <p className="text-sm">Instalator: {d.installer || 'Brak danych'}</p>
                       <p className="text-sm">Nr seryjny: {d.serial || 'Brak danych'}</p>
                       <p className="text-sm">Status: {d.status || 'Brak danych'}</p>
+                      {d.client || d.installer ? <div className="mt-2 text-xs text-slate-500">Urządzenie gotowe do połączenia z przeglądami, gwarancją i historią serwisu.</div> : null}
                     </CardContent>
                   </Card>
                 ))
@@ -644,11 +702,24 @@ export default function BlokflowPanel() {
 
             <TabsContent value="serwis" className="space-y-3">
               {loading.service ? (
-                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie zgłoszeń serwisowych...</CardContent></Card>
+                <Card>
+                  <CardContent className="p-4 text-sm text-slate-500">
+                    Ładowanie zgłoszeń serwisowych...
+                  </CardContent>
+                </Card>
               ) : errors.service ? (
-                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania serwisu: {errors.service}<div className="mt-2 break-all text-xs text-slate-500">{SERVICE_API}</div></CardContent></Card>
+                <Card>
+                  <CardContent className="p-4 text-sm text-red-600">
+                    Błąd pobierania serwisu: {errors.service}
+                    <div className="mt-2 break-all text-xs text-slate-500">{SERVICE_API}</div>
+                  </CardContent>
+                </Card>
               ) : serviceTickets.length === 0 ? (
-                <Card><CardContent className="p-4 text-sm text-slate-500">Brak zgłoszeń serwisowych.</CardContent></Card>
+                <Card>
+                  <CardContent className="p-4 text-sm text-slate-500">
+                    Brak zgłoszeń serwisowych.
+                  </CardContent>
+                </Card>
               ) : (
                 serviceTickets.map((s) => (
                   <Card key={s.id}>
@@ -679,15 +750,15 @@ export default function BlokflowPanel() {
             <CardContent className="p-4">
               <p className="font-semibold mb-3">Szybkie akcje instalatora</p>
               <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => document.getElementById('clientForm')?.scrollIntoView({ behavior: 'smooth' })} type="button" className="rounded-xl border px-3 py-4 text-sm text-left bg-slate-50">Dodaj klienta</button>
-                <button onClick={() => document.getElementById('deviceForm')?.scrollIntoView({ behavior: 'smooth' })} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Dodaj urządzenie</button>
-                <button onClick={() => document.getElementById('serviceForm')?.scrollIntoView({ behavior: 'smooth' })} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Zgłoś serwis</button>
+                <button onClick={() => document.getElementById('clientForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left bg-slate-50">Dodaj klienta</button>
+                <button onClick={() => document.getElementById('deviceForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Dodaj urządzenie</button>
+                <button onClick={() => document.getElementById('serviceForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Zgłoś serwis</button>
                 <button type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Moje przypomnienia</button>
               </div>
             </CardContent>
           </Card>
 
-          <Card id="clientForm">
+          <div id="clientForm"><Card>
             <CardContent className="p-4 space-y-4">
               <div>
                 <p className="font-semibold">Dodaj klienta</p>
@@ -738,9 +809,9 @@ export default function BlokflowPanel() {
                 <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveClient}>Zapisz klienta</button>
               </div>
             </CardContent>
-          </Card>
+          </Card></div>
 
-          <Card id="deviceForm">
+          <div id="deviceForm"><Card>
             <CardContent className="p-4 space-y-4">
               <div>
                 <p className="font-semibold">Dodaj urządzenie</p>
@@ -790,9 +861,9 @@ export default function BlokflowPanel() {
                 <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveDevice}>Zapisz urządzenie</button>
               </div>
             </CardContent>
-          </Card>
+          </Card></div>
 
-          <Card id="serviceForm">
+          <div id="serviceForm"><Card>
             <CardContent className="p-4 space-y-4">
               <div>
                 <p className="font-semibold">Zgłoś serwis</p>
@@ -837,7 +908,7 @@ export default function BlokflowPanel() {
                 <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveService}>Wyślij zgłoszenie</button>
               </div>
             </CardContent>
-          </Card>
+          </Card></div>
 
           <Card>
             <CardContent className="p-4">
@@ -890,15 +961,4 @@ export default function BlokflowPanel() {
                       <p className="font-medium">{d.type}</p>
                       <p className="text-sm text-slate-500">Klient: {d.client || 'Brak danych'}</p>
                       <p className="text-sm text-slate-500">Status: {d.status || 'Brak danych'}</p>
-                      {d.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {d.serial}</p> : null}
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-    </div>
-  );
-}
+                      {d.serial ? <p className="text-xs text-slate-400 mt-1">N
