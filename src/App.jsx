@@ -18,10 +18,9 @@ const starterDevices = [
   },
 ];
 
+// tryb API sterowany dynamicznie (żeby uniknąć pętli zgód w canvas)
 const DEFAULT_USE_LIVE_API = true;
-const APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbxFp8d5tzAy49jOFwIzkPinELhulapff0KHvBJJT0Nu68UhmvnDz5Bp85BT8VnbaXvSFQ/exec';
-
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFp8d5tzAy49jOFwIzkPinELhulapff0KHvBJJT0Nu68UhmvnDz5Bp85BT8VnbaXvSFQ/exec';
 const INSTALLERS_SHEET = 'INSTALATORZY';
 const CLIENTS_SHEET = 'KLIENCI';
 const DEVICES_SHEET = 'URZADZENIA';
@@ -46,15 +45,13 @@ function makeId(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
 
-function scrollToId(id) {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
 async function fetchSheetData(url) {
   const response = await fetch(url, {
     method: 'GET',
     redirect: 'follow',
-    headers: { Accept: 'application/json, text/plain;q=0.9,*/*;q=0.8' },
+    headers: {
+      Accept: 'application/json, text/plain;q=0.9,*/*;q=0.8',
+    },
   });
 
   const rawText = await response.text();
@@ -71,7 +68,7 @@ async function fetchSheetData(url) {
     }
 
     return ensureArray(parsed);
-  } catch {
+  } catch (error) {
     throw new Error(`Nie udało się odczytać JSON z API. Odpowiedź: ${rawText.slice(0, 300)}`);
   }
 }
@@ -79,7 +76,9 @@ async function fetchSheetData(url) {
 async function postSheetData(payload) {
   const response = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8',
+    },
     body: JSON.stringify(payload),
   });
 
@@ -98,7 +97,9 @@ async function postSheetData(payload) {
 
     return parsed;
   } catch (error) {
-    if (error instanceof Error) throw error;
+    if (error instanceof Error) {
+      throw error;
+    }
     throw new Error(`Nie udało się odczytać odpowiedzi POST. Odpowiedź: ${rawText}`);
   }
 }
@@ -138,11 +139,17 @@ function mapClient(row, index) {
 }
 
 function mapDevice(row, index) {
-  const nextService =
-    row['Termin przeglądu'] ||
-    row['Termin pierwszego przeglądu'] ||
-    row['Termin przegladu'] ||
-    '';
+  const nextService = row['Termin przeglądu'] || row['Termin pierwszego przeglądu'] || '';
+  let reminder = '';
+
+  if (nextService) {
+    const today = new Date();
+    const serviceDate = new Date(nextService);
+    const diffDays = Math.floor((serviceDate - today) / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 7) reminder = 'Pilne';
+    else if (diffDays <= 30) reminder = 'Nadchodzi';
+  }
 
   return {
     id: row['ID URZĄDZENIA'] || row['ID URZADZENIA'] || `BLK-${index + 1}`,
@@ -151,8 +158,9 @@ function mapDevice(row, index) {
     installer: row['Instalator'] || row['Nazwa Firmy'] || '',
     serial: row['Numer seryjny'] || row['Nr seryjny'] || row['Serial'] || '',
     status: row['Status'] || 'Aktywne',
-    pump: row['Model'] || row['Pompa'] || row['Model / Pompa'] || row['Model / pompa'] || '',
+    pump: row['Model'] || row['Pompa'] || row['Model / pompa'] || '',
     nextService,
+    reminder,
     note: row['Notatka'] || row['Notatka montażowa'] || '',
   };
 }
@@ -181,47 +189,6 @@ function StatCard({ label, value }) {
   );
 }
 
-function ReminderBlock({ title, items, tone }) {
-  const toneClass =
-    tone === 'red'
-      ? 'text-red-600 border-red-200 bg-red-50'
-      : tone === 'orange'
-        ? 'text-orange-600 border-orange-200 bg-orange-50'
-        : 'text-slate-600 border-slate-200 bg-slate-50';
-
-  return (
-    <div>
-      <p className="text-sm font-medium mb-2">{title}</p>
-      <div className="space-y-3">
-        {items.length === 0 ? (
-          <p className="text-sm text-slate-500">Brak.</p>
-        ) : (
-          items.map((r) => (
-            <div key={`${title}-${r.id}`} className="rounded-xl border p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium">{r.client || 'Brak klienta'}</p>
-                  <p className="text-sm text-slate-500">{r.type}</p>
-                  {r.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {r.serial}</p> : null}
-                </div>
-                <div className={`text-xs px-2 py-1 rounded-full border ${toneClass}`}>{r.level}</div>
-              </div>
-              <p className="text-sm mt-2">Termin przeglądu: {r.nextService}</p>
-              <p className="text-xs text-slate-500 mt-1">
-                {r.diffDays < 0
-                  ? `Opóźnienie: ${Math.abs(r.diffDays)} dni`
-                  : r.diffDays === 0
-                    ? 'Przegląd dzisiaj'
-                    : `Za ${r.diffDays} dni`}
-              </p>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function BlokflowPanel() {
   const [filterType, setFilterType] = useState('Wszyscy');
   const [viewMode, setViewMode] = useState('admin');
@@ -230,22 +197,20 @@ export default function BlokflowPanel() {
   const [devices, setDevices] = useState(starterDevices);
   const [serviceTickets, setServiceTickets] = useState([]);
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState({
-    installers: false,
-    clients: false,
-    devices: false,
-    service: false,
-  });
-  const [errors, setErrors] = useState({
-    installers: '',
-    clients: '',
-    devices: '',
-    service: '',
-  });
+  const [loading, setLoading] = useState({ installers: false, clients: false, devices: false, service: false });
+  const [errors, setErrors] = useState({ installers: '', clients: '', devices: '', service: '' });
   const [isConnected, setIsConnected] = useState(true);
   const [useLiveApi, setUseLiveApi] = useState(DEFAULT_USE_LIVE_API);
   const [submitState, setSubmitState] = useState({ type: '', message: '' });
   const hasLoadedRef = useRef(false);
+
+  // AUTO POŁĄCZENIE PRZY STARCIE (bez klikania)
+  useEffect(() => {
+    if (DEFAULT_USE_LIVE_API) {
+      setUseLiveApi(true);
+      setIsConnected(true);
+    }
+  }, []);
 
   const [clientForm, setClientForm] = useState({
     name: '',
@@ -276,13 +241,6 @@ export default function BlokflowPanel() {
   });
 
   useEffect(() => {
-    if (DEFAULT_USE_LIVE_API) {
-      setUseLiveApi(true);
-      setIsConnected(true);
-    }
-  }, []);
-
-  useEffect(() => {
     if (!useLiveApi || !isConnected || hasLoadedRef.current) return;
 
     let cancelled = false;
@@ -307,10 +265,9 @@ export default function BlokflowPanel() {
         setInstallers([]);
         setErrors((prev) => ({
           ...prev,
-          installers:
-            installersResult.reason instanceof Error
-              ? installersResult.reason.message
-              : 'Nieznany błąd pobierania instalatorów.',
+          installers: installersResult.reason instanceof Error
+            ? installersResult.reason.message
+            : 'Nieznany błąd pobierania instalatorów.',
         }));
       }
 
@@ -320,10 +277,9 @@ export default function BlokflowPanel() {
         setClients([]);
         setErrors((prev) => ({
           ...prev,
-          clients:
-            clientsResult.reason instanceof Error
-              ? clientsResult.reason.message
-              : 'Nieznany błąd pobierania klientów.',
+          clients: clientsResult.reason instanceof Error
+            ? clientsResult.reason.message
+            : 'Nieznany błąd pobierania klientów.',
         }));
       }
 
@@ -333,10 +289,9 @@ export default function BlokflowPanel() {
         setDevices(starterDevices);
         setErrors((prev) => ({
           ...prev,
-          devices:
-            devicesResult.reason instanceof Error
-              ? devicesResult.reason.message
-              : 'Nieznany błąd pobierania urządzeń.',
+          devices: devicesResult.reason instanceof Error
+            ? devicesResult.reason.message
+            : 'Nieznany błąd pobierania urządzeń.',
         }));
       }
 
@@ -346,10 +301,9 @@ export default function BlokflowPanel() {
         setServiceTickets([]);
         setErrors((prev) => ({
           ...prev,
-          service:
-            serviceResult.reason instanceof Error
-              ? serviceResult.reason.message
-              : 'Nieznany błąd pobierania serwisu.',
+          service: serviceResult.reason instanceof Error
+            ? serviceResult.reason.message
+            : 'Nieznany błąd pobierania serwisu.',
         }));
       }
 
@@ -361,13 +315,13 @@ export default function BlokflowPanel() {
     return () => {
       cancelled = true;
     };
-  }, [isConnected, useLiveApi]);
+  }, [isConnected]);
 
   const filteredInstallers = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return installers;
     return installers.filter((i) =>
-      [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan, i.type]
+      [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
@@ -421,7 +375,6 @@ export default function BlokflowPanel() {
 
         let level = '';
         if (diffDays < 0) level = 'Po terminie';
-        else if (diffDays === 0) level = 'Dzisiaj';
         else if (diffDays <= 7) level = 'Pilne';
         else if (diffDays <= 30) level = 'W ciągu 30 dni';
         else return null;
@@ -439,16 +392,6 @@ export default function BlokflowPanel() {
       .filter(Boolean)
       .sort((a, b) => a.diffDays - b.diffDays);
   }, [devices]);
-
-  const groupedReminders = useMemo(
-    () => ({
-      overdue: upcomingReminders.filter((r) => r.level === 'Po terminie'),
-      today: upcomingReminders.filter((r) => r.level === 'Dzisiaj'),
-      week: upcomingReminders.filter((r) => r.level === 'Pilne'),
-      month: upcomingReminders.filter((r) => r.level === 'W ciągu 30 dni'),
-    }),
-    [upcomingReminders]
-  );
 
   function resetClientForm() {
     setClientForm({
@@ -503,7 +446,7 @@ export default function BlokflowPanel() {
 
     try {
       if (useLiveApi) {
-        await postSheetData({
+        const result = await postSheetData({
           action: 'append',
           sheet: CLIENTS_SHEET,
           row: {
@@ -517,12 +460,15 @@ export default function BlokflowPanel() {
             'Notatka': record.note,
           },
         });
+
+        console.log('ODPOWIEDŹ Z APPS SCRIPT:', result);
       }
 
       setClients((prev) => [record, ...prev]);
       resetClientForm();
       setSubmitState({ type: 'success', message: 'Klient został zapisany.' });
     } catch (error) {
+      console.error('BŁĄD ZAPISU:', error);
       setSubmitState({
         type: 'error',
         message: error instanceof Error ? error.message : 'Nie udało się zapisać klienta.',
@@ -555,13 +501,14 @@ export default function BlokflowPanel() {
           sheet: DEVICES_SHEET,
           row: {
             'ID URZADZENIA': record.id,
-            'Typ urządzenia': record.type,
-            Klient: record.client,
+            'Typ': record.type,
+            'Klient': record.client,
+            'Instalator': record.installer,
             'Numer seryjny': record.serial,
-            Status: record.status,
-            'Model / Pompa': record.pump,
+            'Status': record.status,
+            'Model': record.pump,
             'Termin przeglądu': record.nextService,
-            Notatka: record.note,
+            'Notatka montażowa': record.note,
           },
         });
       }
@@ -601,13 +548,13 @@ export default function BlokflowPanel() {
           sheet: SERVICE_SHEET,
           row: {
             'ID SERWISU': record.id,
-            Klient: record.client,
-            Urządzenie: record.device,
+            'Klient': record.client,
+            'Urządzenie': record.device,
             'Typ zgłoszenia': record.kind,
-            Priorytet: record.priority,
-            Opis: record.description,
+            'Priorytet': record.priority,
+            'Opis': record.description,
             'Preferowany termin': record.preferredDate,
-            Status: record.status,
+            'Status': record.status,
           },
         });
       }
@@ -648,7 +595,11 @@ export default function BlokflowPanel() {
           </button>
         </div>
 
-        <Input placeholder="Szukaj..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input
+          placeholder="Szukaj..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
       {submitState.message ? (
@@ -664,16 +615,15 @@ export default function BlokflowPanel() {
           <div className="flex flex-wrap gap-3 items-center">
             <button
               type="button"
-              onClick={() => {
-                setUseLiveApi(true);
-                setIsConnected(true);
-                hasLoadedRef.current = false;
-              }}
+              onClick={() => { setUseLiveApi(true); setIsConnected(true); }}
+              disabled={false}
               className="px-4 py-2 rounded-md text-white text-sm bg-black"
             >
               Połącz z Google Sheets
             </button>
-            <p className="text-sm text-slate-500">Dane ładują się automatycznie, ten przycisk działa też jako odśwież.</p>
+            <p className="text-sm text-slate-500">
+              Kliknij, aby połączyć z Google Sheets (może wyskoczyć zgoda – to normalne).
+            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -683,17 +633,50 @@ export default function BlokflowPanel() {
             <StatCard label="Aktywni / Premium" value={installers.filter((i) => i.plan === 'Aktywny' || i.plan === 'Premium').length} />
           </div>
 
+          <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <p className="font-semibold mb-3">Szybki podgląd biznesowy</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-slate-500">Nowi instalatorzy</p>
+                    <p className="text-xl font-semibold mt-1">{installers.filter((i) => i.plan === 'Nowy').length}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-slate-500">Instalatorzy premium</p>
+                    <p className="text-xl font-semibold mt-1">{installers.filter((i) => i.plan === 'Premium').length}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-slate-500">Klienci przypisani</p>
+                    <p className="text-xl font-semibold mt-1">{clients.filter((c) => c.installer).length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4">
+                <p className="font-semibold mb-3">Szybkie akcje</p>
+                <div className="space-y-2">
+                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Dodaj instalatora</button>
+                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Dodaj klienta</button>
+                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Dodaj urządzenie</button>
+                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Przejdź do mapy partnerów</button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* MAPA INSTALATORÓW (MVP) */}
           <Card>
             <CardContent className="p-4">
               <p className="font-semibold mb-3">Mapa instalatorów (MVP)</p>
 
               <div className="flex gap-2 mb-3">
-                {['Wszyscy', 'Pompy ciepła', 'Klimatyzacja'].map((t) => (
-                  <button
-                    key={t}
+                {['Wszyscy','Pompy ciepła','Klimatyzacja'].map(t => (
+                  <button key={t}
                     onClick={() => setFilterType(t)}
-                    className={`px-3 py-1 text-xs rounded-full border ${filterType === t ? 'bg-black text-white' : 'bg-white'}`}
-                  >
+                    className={`px-3 py-1 text-xs rounded-full border ${filterType===t ? 'bg-black text-white':'bg-white'}`}>
                     {t}
                   </button>
                 ))}
@@ -701,8 +684,8 @@ export default function BlokflowPanel() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {installers
-                  .filter((i) => filterType === 'Wszyscy' || i.type === filterType)
-                  .map((i) => (
+                  .filter(i => filterType==='Wszyscy' || i.type===filterType)
+                  .map(i => (
                     <div key={i.id} className="border rounded-lg p-3 text-sm">
                       <div className="font-medium">{i.company}</div>
                       <div className="text-slate-500">{i.city}</div>
@@ -710,6 +693,7 @@ export default function BlokflowPanel() {
                     </div>
                   ))}
               </div>
+
             </CardContent>
           </Card>
 
@@ -722,49 +706,95 @@ export default function BlokflowPanel() {
             </TabsList>
 
             <TabsContent value="instalatorzy" className="space-y-3">
-              {filteredInstallers.map((i) => (
-                <Card key={i.id}>
-                  <CardContent className="p-4">
-                    <p className="font-medium">{i.company}</p>
-                    {i.owner ? <p className="text-sm">{i.owner}</p> : null}
-                    <p className="text-sm">{i.city}</p>
-                    <Badge>{i.plan}</Badge>
-                    <p className="text-xs text-slate-500 mt-1">{i.type}</p>
-                  </CardContent>
-                </Card>
-              ))}
+              {loading.installers ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie instalatorów...</CardContent></Card>
+              ) : errors.installers ? (
+                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania instalatorów: {errors.installers}<div className="mt-2 break-all text-xs text-slate-500">{INSTALLERS_API}</div></CardContent></Card>
+              ) : filteredInstallers.length === 0 ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Brak instalatorów do wyświetlenia.</CardContent></Card>
+              ) : (
+                filteredInstallers.map((i) => (
+                  <Card key={i.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{i.company}</p>
+                      {i.owner ? <p className="text-sm">{i.owner}</p> : null}
+                      <p className="text-sm">{i.city}</p>
+                      <Badge variant={i.plan === 'Premium' ? 'default' : 'secondary'}>{i.plan}</Badge>
+                      {i.region ? <p className="text-sm text-slate-500 mt-1">{i.region}</p> : null}
+                      {i.registrationDate ? <p className="text-xs text-slate-500">Rejestracja: {i.registrationDate}</p> : null}
+                      {i.phone ? <p className="text-sm mt-1">{i.phone}</p> : null}
+                      {i.email ? <p className="text-sm">{i.email}</p> : null}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </TabsContent>
 
             <TabsContent value="klienci" className="space-y-3">
-              {filteredClients.map((c) => (
-                <Card key={c.id}>
-                  <CardContent className="p-4">
-                    <p className="font-medium">{c.name}</p>
-                    <p className="text-sm">{c.city}</p>
-                    {c.phone ? <p className="text-sm">{c.phone}</p> : null}
-                    {c.installer ? <p className="text-sm">Instalator: {c.installer}</p> : null}
-                    <Badge>{c.source}</Badge>
-                  </CardContent>
-                </Card>
-              ))}
+              {loading.clients ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie klientów...</CardContent></Card>
+              ) : errors.clients ? (
+                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania klientów: {errors.clients}<div className="mt-2 break-all text-xs text-slate-500">{CLIENTS_API}</div></CardContent></Card>
+              ) : filteredClients.length === 0 ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Brak klientów do wyświetlenia.</CardContent></Card>
+              ) : (
+                filteredClients.map((c) => (
+                  <Card key={c.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{c.name}</p>
+                      <p className="text-sm">{c.city}</p>
+                      {c.phone ? <p className="text-sm">{c.phone}</p> : null}
+                      {c.installer ? <p className="text-sm">Instalator: {c.installer}</p> : null}
+                      <Badge>{c.source}</Badge>
+                      {c.name ? <div className="mt-2 text-xs text-slate-500">Karta klienta gotowa do rozbudowy o zgłoszenia i historię serwisową.</div> : null}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </TabsContent>
 
             <TabsContent value="urzadzenia" className="space-y-3">
-              {filteredDevices.map((d) => (
-                <Card key={d.id}>
-                  <CardContent className="p-4">
-                    <p className="font-medium">{d.type}</p>
-                    <p className="text-sm">Klient: {d.client || 'Brak danych'}</p>
-                    <p className="text-sm">Termin przeglądu: {d.nextService || 'Brak'}</p>
-                  </CardContent>
-                </Card>
-              ))}
+              {loading.devices ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie urządzeń...</CardContent></Card>
+              ) : errors.devices ? (
+                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania urządzeń: {errors.devices}<div className="mt-2 break-all text-xs text-slate-500">{DEVICES_API}</div></CardContent></Card>
+              ) : filteredDevices.length === 0 ? (
+                <Card><CardContent className="p-4 text-sm text-slate-500">Brak urządzeń do wyświetlenia.</CardContent></Card>
+              ) : (
+                filteredDevices.map((d) => (
+                  <Card key={d.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{d.type}</p>
+                      <p className="text-sm">Klient: {d.client || 'Brak danych'}</p>
+                      <p className="text-sm">Instalator: {d.installer || 'Brak danych'}</p>
+                      <p className="text-sm">Nr seryjny: {d.serial || 'Brak danych'}</p>
+                      <p className="text-sm">Status: {d.status || 'Brak danych'}</p>
+                      {d.client || d.installer ? <div className="mt-2 text-xs text-slate-500">Urządzenie gotowe do połączenia z przeglądami, gwarancją i historią serwisu.</div> : null}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </TabsContent>
 
             <TabsContent value="serwis" className="space-y-3">
-              {serviceTickets.length === 0 ? (
+              {loading.service ? (
                 <Card>
-                  <CardContent className="p-4 text-sm text-slate-500">Brak zgłoszeń serwisowych.</CardContent>
+                  <CardContent className="p-4 text-sm text-slate-500">
+                    Ładowanie zgłoszeń serwisowych...
+                  </CardContent>
+                </Card>
+              ) : errors.service ? (
+                <Card>
+                  <CardContent className="p-4 text-sm text-red-600">
+                    Błąd pobierania serwisu: {errors.service}
+                    <div className="mt-2 break-all text-xs text-slate-500">{SERVICE_API}</div>
+                  </CardContent>
+                </Card>
+              ) : serviceTickets.length === 0 ? (
+                <Card>
+                  <CardContent className="p-4 text-sm text-slate-500">
+                    Brak zgłoszeń serwisowych.
+                  </CardContent>
                 </Card>
               ) : (
                 serviceTickets.map((s) => (
@@ -774,6 +804,9 @@ export default function BlokflowPanel() {
                       <p className="text-sm">Klient: {s.client}</p>
                       <p className="text-sm">Urządzenie: {s.device}</p>
                       <p className="text-sm">Priorytet: {s.priority}</p>
+                      <p className="text-sm text-slate-500">{s.description}</p>
+                      {s.preferredDate ? <p className="text-xs text-slate-400 mt-1">Termin: {s.preferredDate}</p> : null}
+                      <p className="text-xs text-slate-400 mt-1">Status: {s.status}</p>
                     </CardContent>
                   </Card>
                 ))
@@ -783,207 +816,282 @@ export default function BlokflowPanel() {
         </>
       ) : (
         <div className="space-y-4 max-w-md mx-auto">
-          <div className="grid grid-cols-3 gap-3">
-            <StatCard label="Moi klienci" value={installerQuickStats.clients} />
-            <StatCard label="Urządzenia" value={installerQuickStats.devices} />
-            <StatCard label="Aktywne" value={installerQuickStats.activeDevices} />
-          </div>
-
-          <Card>
-            <CardContent className="p-4">
-              <p className="font-semibold mb-3">Zakładki instalatora</p>
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => scrollToId('clientForm')} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Klienci</button>
-                <button onClick={() => scrollToId('deviceForm')} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Urządzenia</button>
-                <button onClick={() => scrollToId('serviceForm')} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Serwis</button>
-                <button onClick={() => scrollToId('remindersSection')} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Przypomnienia</button>
-              </div>
-            </CardContent>
-          </Card>
+          
 
           <Card>
             <CardContent className="p-4">
               <p className="font-semibold mb-3">Szybkie akcje instalatora</p>
               <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => scrollToId('clientForm')} type="button" className="rounded-xl border px-3 py-4 text-sm text-left bg-slate-50">Dodaj klienta</button>
-                <button onClick={() => scrollToId('deviceForm')} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Dodaj urządzenie</button>
-                <button onClick={() => scrollToId('serviceForm')} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Zgłoś serwis</button>
-                <button onClick={() => scrollToId('remindersSection')} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Moje przypomnienia</button>
+                <button onClick={() => document.getElementById('clientForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left bg-slate-50">Dodaj klienta</button>
+                <button onClick={() => document.getElementById('deviceForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Dodaj urządzenie</button>
+                <button onClick={() => document.getElementById('serviceForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Zgłoś serwis</button>
+                <button onClick={() => document.getElementById('remindersSection')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Moje przypomnienia</button>
               </div>
             </CardContent>
           </Card>
 
-          <div id="clientForm">
-            <Card>
-              <CardContent className="p-4 space-y-4">
+          <div id="clientForm"><Card>
+            <CardContent className="p-4 space-y-4">
+              <div>
+                <p className="font-semibold">Dodaj klienta</p>
+                <p className="text-sm text-slate-500 mt-1">Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.</p>
+              </div>
+
+              <div className="space-y-3">
                 <div>
-                  <p className="font-semibold">Dodaj klienta</p>
-                  <p className="text-sm text-slate-500 mt-1">Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.</p>
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-sm font-medium">Imię i nazwisko / nazwa klienta</label>
-                    <Input placeholder="np. Anna Nowak" className="mt-1" value={clientForm.name} onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))} />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-sm font-medium">Telefon</label>
-                      <Input placeholder="np. 500 600 700" className="mt-1" value={clientForm.phone} onChange={(e) => setClientForm((prev) => ({ ...prev, phone: e.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Miasto</label>
-                      <Input placeholder="np. Gdańsk" className="mt-1" value={clientForm.city} onChange={(e) => setClientForm((prev) => ({ ...prev, city: e.target.value }))} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium">Adres montażu</label>
-                    <Input placeholder="Ulica, numer domu" className="mt-1" value={clientForm.address} onChange={(e) => setClientForm((prev) => ({ ...prev, address: e.target.value }))} />
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium">Źródło klienta</label>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {['Własny klient', 'Lead BLOKFLOW', 'Polecenie'].map((option) => (
-                        <button key={option} type="button" onClick={() => setClientForm((prev) => ({ ...prev, source: option }))} className={`rounded-full border px-3 py-1 text-xs ${clientForm.source === option ? 'bg-black text-white' : 'bg-white'}`}>
-                          {option}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium">Notatka</label>
-                    <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Krótka informacja o kliencie, budynku lub planowanym montażu" value={clientForm.note} onChange={(e) => setClientForm((prev) => ({ ...prev, note: e.target.value }))} />
-                  </div>
+                  <label className="text-sm font-medium">Imię i nazwisko / nazwa klienta</label>
+                  <Input placeholder="np. Anna Nowak" className="mt-1" value={clientForm.name} onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetClientForm}>Wyczyść</button>
-                  <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveClient}>Zapisz klienta</button>
+                  <div>
+                    <label className="text-sm font-medium">Telefon</label>
+                    <Input placeholder="np. 500 600 700" className="mt-1" value={clientForm.phone} onChange={(e) => setClientForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Miasto</label>
+                    <Input placeholder="np. Gdańsk" className="mt-1" value={clientForm.city} onChange={(e) => setClientForm((prev) => ({ ...prev, city: e.target.value }))} />
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
 
-          <div id="deviceForm">
-            <Card>
-              <CardContent className="p-4 space-y-4">
                 <div>
-                  <p className="font-semibold">Dodaj urządzenie</p>
-                  <p className="text-sm text-slate-500 mt-1">Drugi krok po kliencie — rejestracja BLOKFLOW lub innego urządzenia z numerem seryjnym i statusem.</p>
+                  <label className="text-sm font-medium">Adres montażu</label>
+                  <Input placeholder="Ulica, numer domu" className="mt-1" value={clientForm.address} onChange={(e) => setClientForm((prev) => ({ ...prev, address: e.target.value }))} />
                 </div>
 
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-sm font-medium">Typ urządzenia</label>
-                    <Input placeholder="np. BLOKFLOW Basic" className="mt-1" value={deviceForm.type} onChange={(e) => setDeviceForm((prev) => ({ ...prev, type: e.target.value }))} />
+                <div>
+                  <label className="text-sm font-medium">Źródło klienta</label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {['Własny klient', 'Lead BLOKFLOW', 'Polecenie'].map((option) => (
+                      <button key={option} type="button" onClick={() => setClientForm((prev) => ({ ...prev, source: option }))} className={`rounded-full border px-3 py-1 text-xs ${clientForm.source === option ? 'bg-black text-white' : 'bg-white'}`}>
+                        {option}
+                      </button>
+                    ))}
                   </div>
+                </div>
 
-                  <div>
-                    <label className="text-sm font-medium">Klient</label>
-                    <Input placeholder="np. Anna Nowak" className="mt-1" value={deviceForm.client} onChange={(e) => setDeviceForm((prev) => ({ ...prev, client: e.target.value }))} />
-                  </div>
+                <div>
+                  <label className="text-sm font-medium">Notatka</label>
+                  <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Krótka informacja o kliencie, budynku lub planowanym montażu" value={clientForm.note} onChange={(e) => setClientForm((prev) => ({ ...prev, note: e.target.value }))} />
+                </div>
+              </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-sm font-medium">Numer seryjny</label>
-                      <Input placeholder="np. BF-2026-001" className="mt-1" value={deviceForm.serial} onChange={(e) => setDeviceForm((prev) => ({ ...prev, serial: e.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Status</label>
-                      <Input placeholder="np. Aktywne" className="mt-1" value={deviceForm.status} onChange={(e) => setDeviceForm((prev) => ({ ...prev, status: e.target.value }))} />
-                    </div>
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetClientForm}>Wyczyść</button>
+                <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveClient}>Zapisz klienta</button>
+              </div>
+            </CardContent>
+          </Card></div>
 
-                  <div>
-                    <label className="text-sm font-medium">Model / pompa</label>
-                    <Input placeholder="np. Panasonic Aquarea 7 kW" className="mt-1" value={deviceForm.pump} onChange={(e) => setDeviceForm((prev) => ({ ...prev, pump: e.target.value }))} />
-                  </div>
+          <div id="deviceForm"><Card>
+            <CardContent className="p-4 space-y-4">
+              <div>
+                <p className="font-semibold">Dodaj urządzenie</p>
+                <p className="text-sm text-slate-500 mt-1">Drugi krok po kliencie — rejestracja BLOKFLOW lub innego urządzenia z numerem seryjnym i statusem.</p>
+              </div>
 
-                  <div>
-                    <label className="text-sm font-medium">Termin pierwszego przeglądu</label>
-                    <Input type="date" className="mt-1" value={deviceForm.nextService} onChange={(e) => setDeviceForm((prev) => ({ ...prev, nextService: e.target.value }))} />
-                  </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium">Typ urządzenia</label>
+                  <Input placeholder="np. BLOKFLOW Basic" className="mt-1" value={deviceForm.type} onChange={(e) => setDeviceForm((prev) => ({ ...prev, type: e.target.value }))} />
+                </div>
 
-                  <div>
-                    <label className="text-sm font-medium">Notatka montażowa</label>
-                    <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Informacje o montażu, konfiguracji, miejscu ustawienia lub uwagach serwisowych" value={deviceForm.note} onChange={(e) => setDeviceForm((prev) => ({ ...prev, note: e.target.value }))} />
-                  </div>
+                <div>
+                  <label className="text-sm font-medium">Klient</label>
+                  <Input placeholder="np. Anna Nowak" className="mt-1" value={deviceForm.client} onChange={(e) => setDeviceForm((prev) => ({ ...prev, client: e.target.value }))} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetDeviceForm}>Wyczyść</button>
-                  <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveDevice}>Zapisz urządzenie</button>
+                  <div>
+                    <label className="text-sm font-medium">Numer seryjny</label>
+                    <Input placeholder="np. BF-2026-001" className="mt-1" value={deviceForm.serial} onChange={(e) => setDeviceForm((prev) => ({ ...prev, serial: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Status</label>
+                    <Input placeholder="np. Aktywne" className="mt-1" value={deviceForm.status} onChange={(e) => setDeviceForm((prev) => ({ ...prev, status: e.target.value }))} />
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
 
-          <div id="serviceForm">
-            <Card>
-              <CardContent className="p-4 space-y-4">
                 <div>
-                  <p className="font-semibold">Zgłoś serwis</p>
-                  <p className="text-sm text-slate-500 mt-1">Szybkie zgłoszenie przeglądu lub awarii dla istniejącego urządzenia.</p>
+                  <label className="text-sm font-medium">Model / pompa</label>
+                  <Input placeholder="np. Panasonic Aquarea 7 kW" className="mt-1" value={deviceForm.pump} onChange={(e) => setDeviceForm((prev) => ({ ...prev, pump: e.target.value }))} />
                 </div>
 
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-sm font-medium">Klient</label>
-                    <Input placeholder="np. Anna Nowak" className="mt-1" value={serviceForm.client} onChange={(e) => setServiceForm((prev) => ({ ...prev, client: e.target.value }))} />
-                  </div>
+                <div>
+                  <label className="text-sm font-medium">Termin pierwszego przeglądu</label>
+                  <Input type="date" className="mt-1" value={deviceForm.nextService} onChange={(e) => setDeviceForm((prev) => ({ ...prev, nextService: e.target.value }))} />
+                </div>
 
-                  <div>
-                    <label className="text-sm font-medium">Urządzenie / nr seryjny</label>
-                    <Input placeholder="np. BF-2026-001" className="mt-1" value={serviceForm.device} onChange={(e) => setServiceForm((prev) => ({ ...prev, device: e.target.value }))} />
-                  </div>
+                <div>
+                  <label className="text-sm font-medium">Notatka montażowa</label>
+                  <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Informacje o montażu, konfiguracji, miejscu ustawienia lub uwagach serwisowych" value={deviceForm.note} onChange={(e) => setDeviceForm((prev) => ({ ...prev, note: e.target.value }))} />
+                </div>
+              </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-sm font-medium">Typ zgłoszenia</label>
-                      <Input placeholder="np. Przegląd / Awaria" className="mt-1" value={serviceForm.kind} onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Priorytet</label>
-                      <Input placeholder="np. Niski / Pilny" className="mt-1" value={serviceForm.priority} onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))} />
-                    </div>
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetDeviceForm}>Wyczyść</button>
+                <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveDevice}>Zapisz urządzenie</button>
+              </div>
+            </CardContent>
+          </Card></div>
 
-                  <div>
-                    <label className="text-sm font-medium">Opis problemu</label>
-                    <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Opisz problem lub zakres przeglądu" value={serviceForm.description} onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))} />
-                  </div>
+          <div id="serviceForm"><Card>
+            <CardContent className="p-4 space-y-4">
+              <div>
+                <p className="font-semibold">Zgłoś serwis</p>
+                <p className="text-sm text-slate-500 mt-1">Szybkie zgłoszenie przeglądu lub awarii dla istniejącego urządzenia.</p>
+              </div>
 
-                  <div>
-                    <label className="text-sm font-medium">Preferowany termin</label>
-                    <Input type="date" className="mt-1" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} />
-                  </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium">Klient</label>
+                  <Input placeholder="np. Anna Nowak" className="mt-1" value={serviceForm.client} onChange={(e) => setServiceForm((prev) => ({ ...prev, client: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Urządzenie / nr seryjny</label>
+                  <Input placeholder="np. BF-2026-001" className="mt-1" value={serviceForm.device} onChange={(e) => setServiceForm((prev) => ({ ...prev, device: e.target.value }))} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetServiceForm}>Wyczyść</button>
-                  <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveService}>Wyślij zgłoszenie</button>
+                  <div>
+                    <label className="text-sm font-medium">Typ zgłoszenia</label>
+                    <Input placeholder="np. Przegląd / Awaria" className="mt-1" value={serviceForm.kind} onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Priorytet</label>
+                    <Input placeholder="np. Niski / Pilny" className="mt-1" value={serviceForm.priority} onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))} />
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
 
-          <div id="remindersSection">
-            <Card>
-              <CardContent className="p-4">
-                <p className="font-semibold mb-3">Moje przypomnienia przeglądów</p>
-                <div className="space-y-4">
-                  <ReminderBlock title="🔴 Po terminie" items={groupedReminders.overdue} tone="red" />
-                  <ReminderBlock title="🟢 Dzisiaj" items={groupedReminders.today} tone="orange" />
-                  <ReminderBlock title="🟠 Na ten tydzień" items={groupedReminders.week} tone="orange" />
-                  <ReminderBlock title="🟡 W ciągu 30 dni" items={groupedReminders.month} tone="gray" />
+                <div>
+                  <label className="text-sm font-medium">Opis problemu</label>
+                  <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Opisz problem lub zakres przeglądu" value={serviceForm.description} onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))} />
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+
+                <div>
+                  <label className="text-sm font-medium">Preferowany termin</label>
+                  <Input type="date" className="mt-1" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetServiceForm}>Wyczyść</button>
+                <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveService}>Wyślij zgłoszenie</button>
+              </div>
+            </CardContent>
+          </Card></div>
+
+          <Card id="remindersSection">
+            <CardContent className="p-4">
+              <p className="font-semibold mb-3">Moje przypomnienia przeglądów</p>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium mb-2">🔴 Po terminie</p>
+                  <div className="space-y-3">
+                    {upcomingReminders.filter((r) => r.level === 'Po terminie').length === 0 ? (
+                      <p className="text-sm text-slate-500">Brak.</p>
+                    ) : (
+                      upcomingReminders
+                        .filter((r) => r.level === 'Po terminie')
+                        .map((r) => (
+                          <div key={`overdue-${r.id}`} className="rounded-xl border p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium">{r.client || 'Brak klienta'}</p>
+                                <p className="text-sm text-slate-500">{r.type}</p>
+                                {r.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {r.serial}</p> : null}
+                              </div>
+                              <div className="text-xs px-2 py-1 rounded-full border text-red-600 border-red-200 bg-red-50">{r.level}</div>
+                            </div>
+                            <p className="text-sm mt-2">Termin przeglądu: {r.nextService}</p>
+                            <p className="text-xs text-slate-500 mt-1">Opóźnienie: {Math.abs(r.diffDays)} dni</p>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium mb-2">🟢 Dzisiaj</p>
+                  <div className="space-y-3">
+                    {upcomingReminders.filter((r) => r.level === 'Dzisiaj').length === 0 ? (
+                      <p className="text-sm text-slate-500">Brak.</p>
+                    ) : (
+                      upcomingReminders
+                        .filter((r) => r.level === 'Dzisiaj')
+                        .map((r) => (
+                          <div key={`today-${r.id}`} className="rounded-xl border p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium">{r.client || 'Brak klienta'}</p>
+                                <p className="text-sm text-slate-500">{r.type}</p>
+                                {r.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {r.serial}</p> : null}
+                              </div>
+                              <div className="text-xs px-2 py-1 rounded-full border text-emerald-600 border-emerald-200 bg-emerald-50">{r.level}</div>
+                            </div>
+                            <p className="text-sm mt-2">Termin przeglądu: {r.nextService}</p>
+                            <p className="text-xs text-slate-500 mt-1">Przegląd dzisiaj</p>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium mb-2">🟠 Na ten tydzień</p>
+                  <div className="space-y-3">
+                    {upcomingReminders.filter((r) => r.level === 'Pilne').length === 0 ? (
+                      <p className="text-sm text-slate-500">Brak.</p>
+                    ) : (
+                      upcomingReminders
+                        .filter((r) => r.level === 'Pilne')
+                        .map((r) => (
+                          <div key={`urgent-${r.id}`} className="rounded-xl border p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium">{r.client || 'Brak klienta'}</p>
+                                <p className="text-sm text-slate-500">{r.type}</p>
+                                {r.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {r.serial}</p> : null}
+                              </div>
+                              <div className="text-xs px-2 py-1 rounded-full border text-orange-600 border-orange-200 bg-orange-50">{r.level}</div>
+                            </div>
+                            <p className="text-sm mt-2">Termin przeglądu: {r.nextService}</p>
+                            <p className="text-xs text-slate-500 mt-1">Za {r.diffDays} dni</p>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium mb-2">🟡 W ciągu 30 dni</p>
+                  <div className="space-y-3">
+                    {upcomingReminders.filter((r) => r.level === 'W ciągu 30 dni').length === 0 ? (
+                      <p className="text-sm text-slate-500">Brak.</p>
+                    ) : (
+                      upcomingReminders
+                        .filter((r) => r.level === 'W ciągu 30 dni')
+                        .map((r) => (
+                          <div key={`soon-${r.id}`} className="rounded-xl border p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium">{r.client || 'Brak klienta'}</p>
+                                <p className="text-sm text-slate-500">{r.type}</p>
+                                {r.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {r.serial}</p> : null}
+                              </div>
+                              <div className="text-xs px-2 py-1 rounded-full border text-slate-600 border-slate-200 bg-slate-50">{r.level}</div>
+                            </div>
+                            <p className="text-sm mt-2">Termin przeglądu: {r.nextService}</p>
+                            <p className="text-xs text-slate-500 mt-1">Za {r.diffDays} dni</p>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>
