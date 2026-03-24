@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -20,7 +19,9 @@ const starterDevices = [
 ];
 
 const DEFAULT_USE_LIVE_API = true;
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFp8d5tzAy49jOFwIzkPinELhulapff0KHvBJJT0Nu68UhmvnDz5Bp85BT8VnbaXvSFQ/exec';
+const APPS_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbxFp8d5tzAy49jOFwIzkPinELhulapff0KHvBJJT0Nu68UhmvnDz5Bp85BT8VnbaXvSFQ/exec';
+
 const INSTALLERS_SHEET = 'INSTALATORZY';
 const CLIENTS_SHEET = 'KLIENCI';
 const DEVICES_SHEET = 'URZADZENIA';
@@ -45,6 +46,10 @@ function makeId(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
 
+function scrollToId(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 async function fetchSheetData(url) {
   const response = await fetch(url, {
     method: 'GET',
@@ -60,9 +65,11 @@ async function fetchSheetData(url) {
 
   try {
     const parsed = JSON.parse(rawText);
+
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.error) {
       throw new Error(String(parsed.error));
     }
+
     return ensureArray(parsed);
   } catch {
     throw new Error(`Nie udało się odczytać JSON z API. Odpowiedź: ${rawText.slice(0, 300)}`);
@@ -82,11 +89,18 @@ async function postSheetData(payload) {
     throw new Error(`HTTP ${response.status}: ${rawText || 'Brak odpowiedzi serwera'}`);
   }
 
-  const parsed = JSON.parse(rawText);
-  if (parsed && typeof parsed === 'object' && parsed.ok === false) {
-    throw new Error(parsed.error || 'Apps Script odrzucił zapis.');
+  try {
+    const parsed = JSON.parse(rawText);
+
+    if (parsed && typeof parsed === 'object' && parsed.ok === false) {
+      throw new Error(parsed.error || 'Apps Script odrzucił zapis.');
+    }
+
+    return parsed;
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error(`Nie udało się odczytać odpowiedzi POST. Odpowiedź: ${rawText}`);
   }
-  return parsed;
 }
 
 function mapInstaller(row, index) {
@@ -124,7 +138,11 @@ function mapClient(row, index) {
 }
 
 function mapDevice(row, index) {
-  const nextService = row['Termin przeglądu'] || row['Termin pierwszego przeglądu'] || '';
+  const nextService =
+    row['Termin przeglądu'] ||
+    row['Termin pierwszego przeglądu'] ||
+    row['Termin przegladu'] ||
+    '';
 
   return {
     id: row['ID URZĄDZENIA'] || row['ID URZADZENIA'] || `BLK-${index + 1}`,
@@ -133,7 +151,7 @@ function mapDevice(row, index) {
     installer: row['Instalator'] || row['Nazwa Firmy'] || '',
     serial: row['Numer seryjny'] || row['Nr seryjny'] || row['Serial'] || '',
     status: row['Status'] || 'Aktywne',
-    pump: row['Model'] || row['Pompa'] || row['Model / pompa'] || '',
+    pump: row['Model'] || row['Pompa'] || row['Model / Pompa'] || row['Model / pompa'] || '',
     nextService,
     note: row['Notatka'] || row['Notatka montażowa'] || '',
   };
@@ -212,16 +230,50 @@ export default function BlokflowPanel() {
   const [devices, setDevices] = useState(starterDevices);
   const [serviceTickets, setServiceTickets] = useState([]);
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState({ installers: false, clients: false, devices: false, service: false });
-  const [errors, setErrors] = useState({ installers: '', clients: '', devices: '', service: '' });
+  const [loading, setLoading] = useState({
+    installers: false,
+    clients: false,
+    devices: false,
+    service: false,
+  });
+  const [errors, setErrors] = useState({
+    installers: '',
+    clients: '',
+    devices: '',
+    service: '',
+  });
   const [isConnected, setIsConnected] = useState(true);
   const [useLiveApi, setUseLiveApi] = useState(DEFAULT_USE_LIVE_API);
   const [submitState, setSubmitState] = useState({ type: '', message: '' });
   const hasLoadedRef = useRef(false);
 
-  const [clientForm, setClientForm] = useState({ name: '', phone: '', city: '', address: '', source: 'Własny klient', note: '' });
-  const [deviceForm, setDeviceForm] = useState({ type: 'BLOKFLOW Basic', client: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
-  const [serviceForm, setServiceForm] = useState({ client: '', device: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '' });
+  const [clientForm, setClientForm] = useState({
+    name: '',
+    phone: '',
+    city: '',
+    address: '',
+    source: 'Własny klient',
+    note: '',
+  });
+
+  const [deviceForm, setDeviceForm] = useState({
+    type: 'BLOKFLOW Basic',
+    client: '',
+    serial: '',
+    status: 'Aktywne',
+    pump: '',
+    nextService: '',
+    note: '',
+  });
+
+  const [serviceForm, setServiceForm] = useState({
+    client: '',
+    device: '',
+    kind: 'Przegląd',
+    priority: 'Niski',
+    description: '',
+    preferredDate: '',
+  });
 
   useEffect(() => {
     if (DEFAULT_USE_LIVE_API) {
@@ -232,6 +284,7 @@ export default function BlokflowPanel() {
 
   useEffect(() => {
     if (!useLiveApi || !isConnected || hasLoadedRef.current) return;
+
     let cancelled = false;
     hasLoadedRef.current = true;
 
@@ -248,30 +301,77 @@ export default function BlokflowPanel() {
 
       if (cancelled) return;
 
-      if (installersResult.status === 'fulfilled') setInstallers(installersResult.value.map(mapInstaller));
-      else setErrors((prev) => ({ ...prev, installers: installersResult.reason instanceof Error ? installersResult.reason.message : 'Nieznany błąd pobierania instalatorów.' }));
+      if (installersResult.status === 'fulfilled') {
+        setInstallers(installersResult.value.map(mapInstaller));
+      } else {
+        setInstallers([]);
+        setErrors((prev) => ({
+          ...prev,
+          installers:
+            installersResult.reason instanceof Error
+              ? installersResult.reason.message
+              : 'Nieznany błąd pobierania instalatorów.',
+        }));
+      }
 
-      if (clientsResult.status === 'fulfilled') setClients(clientsResult.value.map(mapClient));
-      else setErrors((prev) => ({ ...prev, clients: clientsResult.reason instanceof Error ? clientsResult.reason.message : 'Nieznany błąd pobierania klientów.' }));
+      if (clientsResult.status === 'fulfilled') {
+        setClients(clientsResult.value.map(mapClient));
+      } else {
+        setClients([]);
+        setErrors((prev) => ({
+          ...prev,
+          clients:
+            clientsResult.reason instanceof Error
+              ? clientsResult.reason.message
+              : 'Nieznany błąd pobierania klientów.',
+        }));
+      }
 
-      if (devicesResult.status === 'fulfilled') setDevices(devicesResult.value.length > 0 ? devicesResult.value.map(mapDevice) : starterDevices);
-      else setErrors((prev) => ({ ...prev, devices: devicesResult.reason instanceof Error ? devicesResult.reason.message : 'Nieznany błąd pobierania urządzeń.' }));
+      if (devicesResult.status === 'fulfilled') {
+        setDevices(devicesResult.value.length > 0 ? devicesResult.value.map(mapDevice) : starterDevices);
+      } else {
+        setDevices(starterDevices);
+        setErrors((prev) => ({
+          ...prev,
+          devices:
+            devicesResult.reason instanceof Error
+              ? devicesResult.reason.message
+              : 'Nieznany błąd pobierania urządzeń.',
+        }));
+      }
 
-      if (serviceResult.status === 'fulfilled') setServiceTickets(serviceResult.value.map(mapServiceTicket));
-      else setErrors((prev) => ({ ...prev, service: serviceResult.reason instanceof Error ? serviceResult.reason.message : 'Nieznany błąd pobierania serwisu.' }));
+      if (serviceResult.status === 'fulfilled') {
+        setServiceTickets(serviceResult.value.map(mapServiceTicket));
+      } else {
+        setServiceTickets([]);
+        setErrors((prev) => ({
+          ...prev,
+          service:
+            serviceResult.reason instanceof Error
+              ? serviceResult.reason.message
+              : 'Nieznany błąd pobierania serwisu.',
+        }));
+      }
 
       setLoading({ installers: false, clients: false, devices: false, service: false });
     }
 
     loadAll();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [isConnected, useLiveApi]);
 
   const filteredInstallers = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return installers;
     return installers.filter((i) =>
-      [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan, i.type].filter(Boolean).join(' ').toLowerCase().includes(q)
+      [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan, i.type]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
     );
   }, [installers, search]);
 
@@ -279,7 +379,11 @@ export default function BlokflowPanel() {
     const q = search.toLowerCase().trim();
     if (!q) return clients;
     return clients.filter((c) =>
-      [c.name, c.city, c.phone, c.installer, c.source, c.address].filter(Boolean).join(' ').toLowerCase().includes(q)
+      [c.name, c.city, c.phone, c.installer, c.source, c.address]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
     );
   }, [clients, search]);
 
@@ -287,13 +391,21 @@ export default function BlokflowPanel() {
     const q = search.toLowerCase().trim();
     if (!q) return devices;
     return devices.filter((d) =>
-      [d.type, d.client, d.installer, d.serial, d.status, d.pump].filter(Boolean).join(' ').toLowerCase().includes(q)
+      [d.type, d.client, d.installer, d.serial, d.status, d.pump]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
     );
   }, [devices, search]);
 
   const installerQuickStats = useMemo(() => {
     const activeDevices = devices.filter((d) => (d.status || '').toLowerCase() !== 'nieaktywne').length;
-    return { clients: clients.length, devices: devices.length, activeDevices };
+    return {
+      clients: clients.length,
+      devices: devices.length,
+      activeDevices,
+    };
   }, [clients, devices]);
 
   const upcomingReminders = useMemo(() => {
@@ -328,23 +440,48 @@ export default function BlokflowPanel() {
       .sort((a, b) => a.diffDays - b.diffDays);
   }, [devices]);
 
-  const groupedReminders = useMemo(() => ({
-    overdue: upcomingReminders.filter((r) => r.level === 'Po terminie'),
-    today: upcomingReminders.filter((r) => r.level === 'Dzisiaj'),
-    week: upcomingReminders.filter((r) => r.level === 'Pilne'),
-    month: upcomingReminders.filter((r) => r.level === 'W ciągu 30 dni'),
-  }), [upcomingReminders]);
+  const groupedReminders = useMemo(
+    () => ({
+      overdue: upcomingReminders.filter((r) => r.level === 'Po terminie'),
+      today: upcomingReminders.filter((r) => r.level === 'Dzisiaj'),
+      week: upcomingReminders.filter((r) => r.level === 'Pilne'),
+      month: upcomingReminders.filter((r) => r.level === 'W ciągu 30 dni'),
+    }),
+    [upcomingReminders]
+  );
 
   function resetClientForm() {
-    setClientForm({ name: '', phone: '', city: '', address: '', source: 'Własny klient', note: '' });
+    setClientForm({
+      name: '',
+      phone: '',
+      city: '',
+      address: '',
+      source: 'Własny klient',
+      note: '',
+    });
   }
 
   function resetDeviceForm() {
-    setDeviceForm({ type: 'BLOKFLOW Basic', client: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
+    setDeviceForm({
+      type: 'BLOKFLOW Basic',
+      client: '',
+      serial: '',
+      status: 'Aktywne',
+      pump: '',
+      nextService: '',
+      note: '',
+    });
   }
 
   function resetServiceForm() {
-    setServiceForm({ client: '', device: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '' });
+    setServiceForm({
+      client: '',
+      device: '',
+      kind: 'Przegląd',
+      priority: 'Niski',
+      description: '',
+      preferredDate: '',
+    });
   }
 
   async function handleSaveClient() {
@@ -386,7 +523,10 @@ export default function BlokflowPanel() {
       resetClientForm();
       setSubmitState({ type: 'success', message: 'Klient został zapisany.' });
     } catch (error) {
-      setSubmitState({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się zapisać klienta.' });
+      setSubmitState({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Nie udało się zapisać klienta.',
+      });
     }
   }
 
@@ -415,14 +555,13 @@ export default function BlokflowPanel() {
           sheet: DEVICES_SHEET,
           row: {
             'ID URZADZENIA': record.id,
-            'Typ': record.type,
-            'Klient': record.client,
-            'Instalator': record.installer,
+            'Typ urządzenia': record.type,
+            Klient: record.client,
             'Numer seryjny': record.serial,
-            'Status': record.status,
-            'Model': record.pump,
+            Status: record.status,
+            'Model / Pompa': record.pump,
             'Termin przeglądu': record.nextService,
-            'Notatka montażowa': record.note,
+            Notatka: record.note,
           },
         });
       }
@@ -431,7 +570,10 @@ export default function BlokflowPanel() {
       resetDeviceForm();
       setSubmitState({ type: 'success', message: 'Urządzenie zostało zapisane.' });
     } catch (error) {
-      setSubmitState({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się zapisać urządzenia.' });
+      setSubmitState({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Nie udało się zapisać urządzenia.',
+      });
     }
   }
 
@@ -459,13 +601,13 @@ export default function BlokflowPanel() {
           sheet: SERVICE_SHEET,
           row: {
             'ID SERWISU': record.id,
-            'Klient': record.client,
-            'Urządzenie': record.device,
+            Klient: record.client,
+            Urządzenie: record.device,
             'Typ zgłoszenia': record.kind,
-            'Priorytet': record.priority,
-            'Opis': record.description,
+            Priorytet: record.priority,
+            Opis: record.description,
             'Preferowany termin': record.preferredDate,
-            'Status': record.status,
+            Status: record.status,
           },
         });
       }
@@ -474,7 +616,10 @@ export default function BlokflowPanel() {
       resetServiceForm();
       setSubmitState({ type: 'success', message: 'Zgłoszenie serwisowe zostało zapisane.' });
     } catch (error) {
-      setSubmitState({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się wysłać zgłoszenia.' });
+      setSubmitState({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Nie udało się wysłać zgłoszenia.',
+      });
     }
   }
 
@@ -487,10 +632,18 @@ export default function BlokflowPanel() {
         </div>
 
         <div className="flex items-center gap-2 rounded-lg border p-1 bg-white">
-          <button type="button" onClick={() => setViewMode('admin')} className={`px-3 py-2 rounded-md text-sm ${viewMode === 'admin' ? 'bg-black text-white' : 'text-slate-600'}`}>
+          <button
+            type="button"
+            onClick={() => setViewMode('admin')}
+            className={`px-3 py-2 rounded-md text-sm ${viewMode === 'admin' ? 'bg-black text-white' : 'text-slate-600'}`}
+          >
             Panel admina
           </button>
-          <button type="button" onClick={() => setViewMode('installer')} className={`px-3 py-2 rounded-md text-sm ${viewMode === 'installer' ? 'bg-black text-white' : 'text-slate-600'}`}>
+          <button
+            type="button"
+            onClick={() => setViewMode('installer')}
+            className={`px-3 py-2 rounded-md text-sm ${viewMode === 'installer' ? 'bg-black text-white' : 'text-slate-600'}`}
+          >
             Panel instalatora
           </button>
         </div>
@@ -509,7 +662,15 @@ export default function BlokflowPanel() {
       {viewMode === 'admin' ? (
         <>
           <div className="flex flex-wrap gap-3 items-center">
-            <button type="button" onClick={() => { setUseLiveApi(true); setIsConnected(true); hasLoadedRef.current = false; }} className="px-4 py-2 rounded-md text-white text-sm bg-black">
+            <button
+              type="button"
+              onClick={() => {
+                setUseLiveApi(true);
+                setIsConnected(true);
+                hasLoadedRef.current = false;
+              }}
+              className="px-4 py-2 rounded-md text-white text-sm bg-black"
+            >
               Połącz z Google Sheets
             </button>
             <p className="text-sm text-slate-500">Dane ładują się automatycznie, ten przycisk działa też jako odśwież.</p>
@@ -525,21 +686,29 @@ export default function BlokflowPanel() {
           <Card>
             <CardContent className="p-4">
               <p className="font-semibold mb-3">Mapa instalatorów (MVP)</p>
+
               <div className="flex gap-2 mb-3">
                 {['Wszyscy', 'Pompy ciepła', 'Klimatyzacja'].map((t) => (
-                  <button key={t} onClick={() => setFilterType(t)} className={`px-3 py-1 text-xs rounded-full border ${filterType === t ? 'bg-black text-white' : 'bg-white'}`}>
+                  <button
+                    key={t}
+                    onClick={() => setFilterType(t)}
+                    className={`px-3 py-1 text-xs rounded-full border ${filterType === t ? 'bg-black text-white' : 'bg-white'}`}
+                  >
                     {t}
                   </button>
                 ))}
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {installers.filter((i) => filterType === 'Wszyscy' || i.type === filterType).map((i) => (
-                  <div key={i.id} className="border rounded-lg p-3 text-sm">
-                    <div className="font-medium">{i.company}</div>
-                    <div className="text-slate-500">{i.city}</div>
-                    <div className="text-xs mt-1">{i.type}</div>
-                  </div>
-                ))}
+                {installers
+                  .filter((i) => filterType === 'Wszyscy' || i.type === filterType)
+                  .map((i) => (
+                    <div key={i.id} className="border rounded-lg p-3 text-sm">
+                      <div className="font-medium">{i.company}</div>
+                      <div className="text-slate-500">{i.city}</div>
+                      <div className="text-xs mt-1">{i.type}</div>
+                    </div>
+                  ))}
               </div>
             </CardContent>
           </Card>
@@ -593,16 +762,22 @@ export default function BlokflowPanel() {
             </TabsContent>
 
             <TabsContent value="serwis" className="space-y-3">
-              {serviceTickets.map((s) => (
-                <Card key={s.id}>
-                  <CardContent className="p-4">
-                    <p className="font-medium">{s.kind}</p>
-                    <p className="text-sm">Klient: {s.client}</p>
-                    <p className="text-sm">Urządzenie: {s.device}</p>
-                    <p className="text-sm">Priorytet: {s.priority}</p>
-                  </CardContent>
+              {serviceTickets.length === 0 ? (
+                <Card>
+                  <CardContent className="p-4 text-sm text-slate-500">Brak zgłoszeń serwisowych.</CardContent>
                 </Card>
-              ))}
+              ) : (
+                serviceTickets.map((s) => (
+                  <Card key={s.id}>
+                    <CardContent className="p-4">
+                      <p className="font-medium">{s.kind}</p>
+                      <p className="text-sm">Klient: {s.client}</p>
+                      <p className="text-sm">Urządzenie: {s.device}</p>
+                      <p className="text-sm">Priorytet: {s.priority}</p>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </TabsContent>
           </Tabs>
         </>
@@ -618,152 +793,197 @@ export default function BlokflowPanel() {
             <CardContent className="p-4">
               <p className="font-semibold mb-3">Zakładki instalatora</p>
               <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => document.getElementById('clientForm')?.scrollIntoView({ behavior: 'smooth' })} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Klienci</button>
-                <button onClick={() => document.getElementById('deviceForm')?.scrollIntoView({ behavior: 'smooth' })} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Urządzenia</button>
-                <button onClick={() => document.getElementById('serviceForm')?.scrollIntoView({ behavior: 'smooth' })} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Serwis</button>
-                <button onClick={() => document.getElementById('remindersSection')?.scrollIntoView({ behavior: 'smooth' })} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Przypomnienia</button>
+                <button onClick={() => scrollToId('clientForm')} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Klienci</button>
+                <button onClick={() => scrollToId('deviceForm')} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Urządzenia</button>
+                <button onClick={() => scrollToId('serviceForm')} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Serwis</button>
+                <button onClick={() => scrollToId('remindersSection')} type="button" className="rounded-xl border px-3 py-3 text-sm text-left">Przypomnienia</button>
               </div>
             </CardContent>
           </Card>
 
-          <div id="clientForm"><Card><CardContent className="p-4 space-y-4">
-            <div>
-              <p className="font-semibold">Dodaj klienta</p>
-              <p className="text-sm text-slate-500 mt-1">Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.</p>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm font-medium">Imię i nazwisko / nazwa klienta</label>
-                <Input placeholder="np. Anna Nowak" className="mt-1" value={clientForm.name} onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium">Telefon</label>
-                  <Input placeholder="np. 500 600 700" className="mt-1" value={clientForm.phone} onChange={(e) => setClientForm((prev) => ({ ...prev, phone: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Miasto</label>
-                  <Input placeholder="np. Gdańsk" className="mt-1" value={clientForm.city} onChange={(e) => setClientForm((prev) => ({ ...prev, city: e.target.value }))} />
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Adres montażu</label>
-                <Input placeholder="Ulica, numer domu" className="mt-1" value={clientForm.address} onChange={(e) => setClientForm((prev) => ({ ...prev, address: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Źródło klienta</label>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {['Własny klient', 'Lead BLOKFLOW', 'Polecenie'].map((option) => (
-                    <button key={option} type="button" onClick={() => setClientForm((prev) => ({ ...prev, source: option }))} className={`rounded-full border px-3 py-1 text-xs ${clientForm.source === option ? 'bg-black text-white' : 'bg-white'}`}>
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Notatka</label>
-                <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Krótka informacja o kliencie, budynku lub planowanym montażu" value={clientForm.note} onChange={(e) => setClientForm((prev) => ({ ...prev, note: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetClientForm}>Wyczyść</button>
-              <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveClient}>Zapisz klienta</button>
-            </div>
-          </CardContent></Card></div>
-
-          <div id="deviceForm"><Card><CardContent className="p-4 space-y-4">
-            <div>
-              <p className="font-semibold">Dodaj urządzenie</p>
-              <p className="text-sm text-slate-500 mt-1">Drugi krok po kliencie — rejestracja BLOKFLOW lub innego urządzenia z numerem seryjnym i statusem.</p>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm font-medium">Typ urządzenia</label>
-                <Input placeholder="np. BLOKFLOW Basic" className="mt-1" value={deviceForm.type} onChange={(e) => setDeviceForm((prev) => ({ ...prev, type: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Klient</label>
-                <Input placeholder="np. Anna Nowak" className="mt-1" value={deviceForm.client} onChange={(e) => setDeviceForm((prev) => ({ ...prev, client: e.target.value }))} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium">Numer seryjny</label>
-                  <Input placeholder="np. BF-2026-001" className="mt-1" value={deviceForm.serial} onChange={(e) => setDeviceForm((prev) => ({ ...prev, serial: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Status</label>
-                  <Input placeholder="np. Aktywne" className="mt-1" value={deviceForm.status} onChange={(e) => setDeviceForm((prev) => ({ ...prev, status: e.target.value }))} />
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Model / pompa</label>
-                <Input placeholder="np. Panasonic Aquarea 7 kW" className="mt-1" value={deviceForm.pump} onChange={(e) => setDeviceForm((prev) => ({ ...prev, pump: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Termin pierwszego przeglądu</label>
-                <Input type="date" className="mt-1" value={deviceForm.nextService} onChange={(e) => setDeviceForm((prev) => ({ ...prev, nextService: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Notatka montażowa</label>
-                <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Informacje o montażu, konfiguracji, miejscu ustawienia lub uwagach serwisowych" value={deviceForm.note} onChange={(e) => setDeviceForm((prev) => ({ ...prev, note: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetDeviceForm}>Wyczyść</button>
-              <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveDevice}>Zapisz urządzenie</button>
-            </div>
-          </CardContent></Card></div>
-
-          <div id="serviceForm"><Card><CardContent className="p-4 space-y-4">
-            <div>
-              <p className="font-semibold">Zgłoś serwis</p>
-              <p className="text-sm text-slate-500 mt-1">Szybkie zgłoszenie przeglądu lub awarii dla istniejącego urządzenia.</p>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm font-medium">Klient</label>
-                <Input placeholder="np. Anna Nowak" className="mt-1" value={serviceForm.client} onChange={(e) => setServiceForm((prev) => ({ ...prev, client: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Urządzenie / nr seryjny</label>
-                <Input placeholder="np. BF-2026-001" className="mt-1" value={serviceForm.device} onChange={(e) => setServiceForm((prev) => ({ ...prev, device: e.target.value }))} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium">Typ zgłoszenia</label>
-                  <Input placeholder="np. Przegląd / Awaria" className="mt-1" value={serviceForm.kind} onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Priorytet</label>
-                  <Input placeholder="np. Niski / Pilny" className="mt-1" value={serviceForm.priority} onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))} />
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Opis problemu</label>
-                <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Opisz problem lub zakres przeglądu" value={serviceForm.description} onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Preferowany termin</label>
-                <Input type="date" className="mt-1" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetServiceForm}>Wyczyść</button>
-              <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveService}>Wyślij zgłoszenie</button>
-            </div>
-          </CardContent></Card></div>
-
-          <Card id="remindersSection">
+          <Card>
             <CardContent className="p-4">
-              <p className="font-semibold mb-3">Moje przypomnienia przeglądów</p>
-              <div className="space-y-4">
-                <ReminderBlock title="🔴 Po terminie" items={groupedReminders.overdue} tone="red" />
-                <ReminderBlock title="🟢 Dzisiaj" items={groupedReminders.today} tone="orange" />
-                <ReminderBlock title="🟠 Na ten tydzień" items={groupedReminders.week} tone="orange" />
-                <ReminderBlock title="🟡 W ciągu 30 dni" items={groupedReminders.month} tone="gray" />
+              <p className="font-semibold mb-3">Szybkie akcje instalatora</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => scrollToId('clientForm')} type="button" className="rounded-xl border px-3 py-4 text-sm text-left bg-slate-50">Dodaj klienta</button>
+                <button onClick={() => scrollToId('deviceForm')} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Dodaj urządzenie</button>
+                <button onClick={() => scrollToId('serviceForm')} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Zgłoś serwis</button>
+                <button onClick={() => scrollToId('remindersSection')} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Moje przypomnienia</button>
               </div>
             </CardContent>
           </Card>
+
+          <div id="clientForm">
+            <Card>
+              <CardContent className="p-4 space-y-4">
+                <div>
+                  <p className="font-semibold">Dodaj klienta</p>
+                  <p className="text-sm text-slate-500 mt-1">Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.</p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium">Imię i nazwisko / nazwa klienta</label>
+                    <Input placeholder="np. Anna Nowak" className="mt-1" value={clientForm.name} onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm font-medium">Telefon</label>
+                      <Input placeholder="np. 500 600 700" className="mt-1" value={clientForm.phone} onChange={(e) => setClientForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Miasto</label>
+                      <Input placeholder="np. Gdańsk" className="mt-1" value={clientForm.city} onChange={(e) => setClientForm((prev) => ({ ...prev, city: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Adres montażu</label>
+                    <Input placeholder="Ulica, numer domu" className="mt-1" value={clientForm.address} onChange={(e) => setClientForm((prev) => ({ ...prev, address: e.target.value }))} />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Źródło klienta</label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {['Własny klient', 'Lead BLOKFLOW', 'Polecenie'].map((option) => (
+                        <button key={option} type="button" onClick={() => setClientForm((prev) => ({ ...prev, source: option }))} className={`rounded-full border px-3 py-1 text-xs ${clientForm.source === option ? 'bg-black text-white' : 'bg-white'}`}>
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Notatka</label>
+                    <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Krótka informacja o kliencie, budynku lub planowanym montażu" value={clientForm.note} onChange={(e) => setClientForm((prev) => ({ ...prev, note: e.target.value }))} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetClientForm}>Wyczyść</button>
+                  <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveClient}>Zapisz klienta</button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div id="deviceForm">
+            <Card>
+              <CardContent className="p-4 space-y-4">
+                <div>
+                  <p className="font-semibold">Dodaj urządzenie</p>
+                  <p className="text-sm text-slate-500 mt-1">Drugi krok po kliencie — rejestracja BLOKFLOW lub innego urządzenia z numerem seryjnym i statusem.</p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium">Typ urządzenia</label>
+                    <Input placeholder="np. BLOKFLOW Basic" className="mt-1" value={deviceForm.type} onChange={(e) => setDeviceForm((prev) => ({ ...prev, type: e.target.value }))} />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Klient</label>
+                    <Input placeholder="np. Anna Nowak" className="mt-1" value={deviceForm.client} onChange={(e) => setDeviceForm((prev) => ({ ...prev, client: e.target.value }))} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm font-medium">Numer seryjny</label>
+                      <Input placeholder="np. BF-2026-001" className="mt-1" value={deviceForm.serial} onChange={(e) => setDeviceForm((prev) => ({ ...prev, serial: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Status</label>
+                      <Input placeholder="np. Aktywne" className="mt-1" value={deviceForm.status} onChange={(e) => setDeviceForm((prev) => ({ ...prev, status: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Model / pompa</label>
+                    <Input placeholder="np. Panasonic Aquarea 7 kW" className="mt-1" value={deviceForm.pump} onChange={(e) => setDeviceForm((prev) => ({ ...prev, pump: e.target.value }))} />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Termin pierwszego przeglądu</label>
+                    <Input type="date" className="mt-1" value={deviceForm.nextService} onChange={(e) => setDeviceForm((prev) => ({ ...prev, nextService: e.target.value }))} />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Notatka montażowa</label>
+                    <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Informacje o montażu, konfiguracji, miejscu ustawienia lub uwagach serwisowych" value={deviceForm.note} onChange={(e) => setDeviceForm((prev) => ({ ...prev, note: e.target.value }))} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetDeviceForm}>Wyczyść</button>
+                  <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveDevice}>Zapisz urządzenie</button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div id="serviceForm">
+            <Card>
+              <CardContent className="p-4 space-y-4">
+                <div>
+                  <p className="font-semibold">Zgłoś serwis</p>
+                  <p className="text-sm text-slate-500 mt-1">Szybkie zgłoszenie przeglądu lub awarii dla istniejącego urządzenia.</p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium">Klient</label>
+                    <Input placeholder="np. Anna Nowak" className="mt-1" value={serviceForm.client} onChange={(e) => setServiceForm((prev) => ({ ...prev, client: e.target.value }))} />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Urządzenie / nr seryjny</label>
+                    <Input placeholder="np. BF-2026-001" className="mt-1" value={serviceForm.device} onChange={(e) => setServiceForm((prev) => ({ ...prev, device: e.target.value }))} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm font-medium">Typ zgłoszenia</label>
+                      <Input placeholder="np. Przegląd / Awaria" className="mt-1" value={serviceForm.kind} onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Priorytet</label>
+                      <Input placeholder="np. Niski / Pilny" className="mt-1" value={serviceForm.priority} onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Opis problemu</label>
+                    <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Opisz problem lub zakres przeglądu" value={serviceForm.description} onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))} />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Preferowany termin</label>
+                    <Input type="date" className="mt-1" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetServiceForm}>Wyczyść</button>
+                  <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveService}>Wyślij zgłoszenie</button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div id="remindersSection">
+            <Card>
+              <CardContent className="p-4">
+                <p className="font-semibold mb-3">Moje przypomnienia przeglądów</p>
+                <div className="space-y-4">
+                  <ReminderBlock title="🔴 Po terminie" items={groupedReminders.overdue} tone="red" />
+                  <ReminderBlock title="🟢 Dzisiaj" items={groupedReminders.today} tone="orange" />
+                  <ReminderBlock title="🟠 Na ten tydzień" items={groupedReminders.week} tone="orange" />
+                  <ReminderBlock title="🟡 W ciągu 30 dni" items={groupedReminders.month} tone="gray" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
     </div>
