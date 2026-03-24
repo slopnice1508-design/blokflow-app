@@ -18,7 +18,6 @@ const starterDevices = [
   },
 ];
 
-// tryb API sterowany dynamicznie (żeby uniknąć pętli zgód w canvas)
 const DEFAULT_USE_LIVE_API = true;
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFp8d5tzAy49jOFwIzkPinELhulapff0KHvBJJT0Nu68UhmvnDz5Bp85BT8VnbaXvSFQ/exec';
 const INSTALLERS_SHEET = 'INSTALATORZY';
@@ -113,6 +112,7 @@ function mapInstaller(row, index) {
     email: row['E-mail'] || '',
     city: row['Miasto'] || '',
     region: row['Województwo'] || '',
+    type: row['Typ instalatora'] || 'Pompy ciepła',
     plan: toYes(row['status premium'])
       ? 'Premium'
       : toYes(row['status aktywny'])
@@ -138,6 +138,18 @@ function mapClient(row, index) {
 }
 
 function mapDevice(row, index) {
+  const nextService = row['Termin przeglądu'] || row['Termin pierwszego przeglądu'] || '';
+  let reminder = '';
+
+  if (nextService) {
+    const today = new Date();
+    const serviceDate = new Date(nextService);
+    const diffDays = Math.floor((serviceDate - today) / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 7) reminder = 'Pilne';
+    else if (diffDays <= 30) reminder = 'Nadchodzi';
+  }
+
   return {
     id: row['ID URZĄDZENIA'] || row['ID URZADZENIA'] || `BLK-${index + 1}`,
     type: row['Typ'] || row['Typ urządzenia'] || row['Typ urzadzenia'] || 'BLOKFLOW',
@@ -146,7 +158,8 @@ function mapDevice(row, index) {
     serial: row['Numer seryjny'] || row['Nr seryjny'] || row['Serial'] || '',
     status: row['Status'] || 'Aktywne',
     pump: row['Model'] || row['Pompa'] || row['Model / pompa'] || '',
-    nextService: row['Termin przeglądu'] || row['Termin pierwszego przeglądu'] || '',
+    nextService,
+    reminder,
     note: row['Notatka'] || row['Notatka montażowa'] || '',
   };
 }
@@ -176,6 +189,7 @@ function StatCard({ label, value }) {
 }
 
 export default function BlokflowPanel() {
+  const [filterType, setFilterType] = useState('Wszyscy');
   const [viewMode, setViewMode] = useState('admin');
   const [installers, setInstallers] = useState([]);
   const [clients, setClients] = useState([]);
@@ -189,7 +203,6 @@ export default function BlokflowPanel() {
   const [submitState, setSubmitState] = useState({ type: '', message: '' });
   const hasLoadedRef = useRef(false);
 
-  // AUTO POŁĄCZENIE PRZY STARCIE (bez klikania)
   useEffect(() => {
     if (DEFAULT_USE_LIVE_API) {
       setUseLiveApi(true);
@@ -346,6 +359,37 @@ export default function BlokflowPanel() {
       activeDevices,
     };
   }, [clients, devices]);
+
+  const upcomingReminders = useMemo(() => {
+    const today = new Date();
+
+    return devices
+      .map((d) => {
+        const nextService = d.nextService || '';
+        if (!nextService) return null;
+
+        const serviceDate = new Date(nextService);
+        const diffDays = Math.floor((serviceDate - today) / (1000 * 60 * 60 * 24));
+
+        let level = '';
+        if (diffDays < 0) level = 'Po terminie';
+        else if (diffDays <= 7) level = 'Pilne';
+        else if (diffDays <= 30) level = 'W ciągu 30 dni';
+        else return null;
+
+        return {
+          id: d.id,
+          client: d.client,
+          type: d.type,
+          serial: d.serial,
+          nextService,
+          diffDays,
+          level,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.diffDays - b.diffDays);
+  }, [devices]);
 
   function resetClientForm() {
     setClientForm({
@@ -621,6 +665,36 @@ export default function BlokflowPanel() {
             </Card>
           </div>
 
+          {/* MAPA INSTALATORÓW (MVP) */}
+          <Card>
+            <CardContent className="p-4">
+              <p className="font-semibold mb-3">Mapa instalatorów (MVP)</p>
+
+              <div className="flex gap-2 mb-3">
+                {['Wszyscy','Pompy ciepła','Klimatyzacja'].map(t => (
+                  <button key={t}
+                    onClick={() => setFilterType(t)}
+                    className={`px-3 py-1 text-xs rounded-full border ${filterType===t ? 'bg-black text-white':'bg-white'}`}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {installers
+                  .filter(i => filterType==='Wszyscy' || i.type===filterType)
+                  .map(i => (
+                    <div key={i.id} className="border rounded-lg p-3 text-sm">
+                      <div className="font-medium">{i.company}</div>
+                      <div className="text-slate-500">{i.city}</div>
+                      <div className="text-xs mt-1">{i.type}</div>
+                    </div>
+                  ))}
+              </div>
+
+            </CardContent>
+          </Card>
+
           <Tabs defaultValue="instalatorzy">
             <TabsList>
               <TabsTrigger value="instalatorzy">Instalatorzy</TabsTrigger>
@@ -753,7 +827,7 @@ export default function BlokflowPanel() {
                 <button onClick={() => document.getElementById('clientForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left bg-slate-50">Dodaj klienta</button>
                 <button onClick={() => document.getElementById('deviceForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Dodaj urządzenie</button>
                 <button onClick={() => document.getElementById('serviceForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Zgłoś serwis</button>
-                <button type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Moje przypomnienia</button>
+                <button onClick={() => document.getElementById('remindersSection')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Moje przypomnienia</button>
               </div>
             </CardContent>
           </Card>
@@ -910,6 +984,36 @@ export default function BlokflowPanel() {
             </CardContent>
           </Card></div>
 
+          <Card id="remindersSection">
+            <CardContent className="p-4">
+              <p className="font-semibold mb-3">Moje przypomnienia przeglądów</p>
+              <div className="space-y-3">
+                {upcomingReminders.length === 0 ? (
+                  <p className="text-sm text-slate-500">Brak nadchodzących przypomnień.</p>
+                ) : (
+                  upcomingReminders.slice(0, 8).map((r) => (
+                    <div key={r.id} className="rounded-xl border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{r.client || 'Brak klienta'}</p>
+                          <p className="text-sm text-slate-500">{r.type}</p>
+                          {r.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {r.serial}</p> : null}
+                        </div>
+                        <div className={`text-xs px-2 py-1 rounded-full border ${r.level === 'Po terminie' ? 'text-red-600 border-red-200 bg-red-50' : r.level === 'Pilne' ? 'text-orange-600 border-orange-200 bg-orange-50' : 'text-slate-600 border-slate-200 bg-slate-50'}`}>
+                          {r.level}
+                        </div>
+                      </div>
+                      <p className="text-sm mt-2">Termin przeglądu: {r.nextService}</p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {r.diffDays < 0 ? `Opóźnienie: ${Math.abs(r.diffDays)} dni` : r.diffDays === 0 ? 'Przegląd dzisiaj' : `Za ${r.diffDays} dni`}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardContent className="p-4">
               <p className="font-semibold mb-3">Ostatnie zgłoszenia</p>
@@ -961,4 +1065,15 @@ export default function BlokflowPanel() {
                       <p className="font-medium">{d.type}</p>
                       <p className="text-sm text-slate-500">Klient: {d.client || 'Brak danych'}</p>
                       <p className="text-sm text-slate-500">Status: {d.status || 'Brak danych'}</p>
-                      {d.serial ? <p className="text-xs text-slate-400 mt-1">N
+                      {d.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {d.serial}</p> : null}
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
