@@ -88,6 +88,23 @@ function TextArea(props) {
   );
 }
 
+function SelectInput(props) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: '100%',
+        padding: '12px 14px',
+        border: '1px solid #d1d5db',
+        borderRadius: 12,
+        fontSize: 14,
+        background: '#fff',
+        ...(props.style || {}),
+      }}
+    />
+  );
+}
+
 function Button({ children, variant = 'secondary', ...props }) {
   const base = {
     padding: '12px 14px',
@@ -165,9 +182,9 @@ function makeId(prefix) {
 function parseDateOnly(value) {
   if (!value) return null;
   const raw = String(value).trim();
-  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) {
-    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   }
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
@@ -179,6 +196,16 @@ function getServiceDiffDays(value) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return Math.floor((serviceDate - today) / (1000 * 60 * 60 * 24));
+}
+
+function getReminderLabel(value) {
+  const diffDays = getServiceDiffDays(value);
+  if (diffDays === null) return '';
+  if (diffDays < 0) return 'Po terminie';
+  if (diffDays === 0) return 'Dzisiaj';
+  if (diffDays <= 7) return 'Pilne';
+  if (diffDays <= 30) return 'W ciągu 30 dni';
+  return '';
 }
 
 function scrollToId(id) {
@@ -265,21 +292,7 @@ function mapClient(row, index) {
 }
 
 function mapDevice(row, index) {
-  const nextService =
-    row['Termin przeglądu'] ||
-    row['Termin pierwszego przeglądu'] ||
-    row['Termin przegladu'] ||
-    '';
-  const diffDays = getServiceDiffDays(nextService);
-  let reminder = '';
-
-  if (diffDays !== null) {
-    if (diffDays < 0) reminder = 'Po terminie';
-    else if (diffDays === 0) reminder = 'Dzisiaj';
-    else if (diffDays <= 7) reminder = 'Pilne';
-    else if (diffDays <= 30) reminder = 'W ciągu 30 dni';
-  }
-
+  const nextService = row['Termin przeglądu'] || row['Termin pierwszego przeglądu'] || row['Termin przegladu'] || '';
   return {
     id: row['ID URZĄDZENIA'] || row['ID URZADZENIA'] || `BLK-${index + 1}`,
     type: row['Typ'] || row['Typ urządzenia'] || row['Typ urzadzenia'] || 'BLOKFLOW',
@@ -289,7 +302,7 @@ function mapDevice(row, index) {
     status: row['Status'] || 'Aktywne',
     pump: row['Model'] || row['Pompa'] || row['Model / Pompa'] || row['Model / pompa'] || '',
     nextService,
-    reminder,
+    reminder: getReminderLabel(nextService),
     note: row['Notatka'] || row['Notatka montażowa'] || '',
   };
 }
@@ -308,12 +321,7 @@ function mapServiceTicket(row, index) {
 }
 
 function ReminderBlock({ title, items, tone }) {
-  const toneMap = {
-    red: 'red',
-    orange: 'orange',
-    green: 'green',
-    gray: 'gray',
-  };
+  const toneMap = { red: 'red', orange: 'orange', green: 'green', gray: 'gray' };
 
   return (
     <div>
@@ -334,11 +342,7 @@ function ReminderBlock({ title, items, tone }) {
               </div>
               <div style={{ fontSize: 14, marginTop: 10 }}>Termin przeglądu: {r.nextService}</div>
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-                {r.diffDays < 0
-                  ? `Opóźnienie: ${Math.abs(r.diffDays)} dni`
-                  : r.diffDays === 0
-                    ? 'Przegląd dzisiaj'
-                    : `Za ${r.diffDays} dni`}
+                {r.diffDays < 0 ? `Opóźnienie: ${Math.abs(r.diffDays)} dni` : r.diffDays === 0 ? 'Przegląd dzisiaj' : `Za ${r.diffDays} dni`}
               </div>
             </div>
           ))
@@ -348,15 +352,59 @@ function ReminderBlock({ title, items, tone }) {
   );
 }
 
-function ClientCardModal({ client, devices, serviceTickets, onClose }) {
+function ClientCardModal({ client, devices, serviceTickets, onClose, onAddService }) {
+  const today = new Date();
+  const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const [showServiceForm, setShowServiceForm] = useState(false);
+  const [serviceDraft, setServiceDraft] = useState({
+    serviceDate: todayString,
+    serviceType: 'Przegląd',
+    note: '',
+    deviceSerial: '',
+    nextService: '',
+  });
+
+  useEffect(() => {
+    setShowServiceForm(false);
+    setServiceDraft({
+      serviceDate: todayString,
+      serviceType: 'Przegląd',
+      note: '',
+      deviceSerial: '',
+      nextService: '',
+    });
+  }, [client]);
+
   if (!client) return null;
 
-  const clientDevices = devices.filter((d) => (d.client || '').trim().toLowerCase() === (client.name || '').trim().toLowerCase());
+  const clientName = (client.name || '').trim().toLowerCase();
+  const clientDevices = devices.filter((d) => (d.client || '').trim().toLowerCase() === clientName);
   const clientServices = serviceTickets.filter((s) => {
-    const byClient = (s.client || '').trim().toLowerCase() === (client.name || '').trim().toLowerCase();
+    const byClient = (s.client || '').trim().toLowerCase() === clientName;
     const byDevice = clientDevices.some((d) => d.serial && s.device && d.serial.trim().toLowerCase() === s.device.trim().toLowerCase());
     return byClient || byDevice;
   });
+
+  async function handleSubmitClientService() {
+    const chosenDevice = clientDevices.find((d) => (d.serial || '') === serviceDraft.deviceSerial);
+    await onAddService({
+      clientName: client.name || '',
+      deviceSerial: serviceDraft.deviceSerial,
+      deviceLabel: chosenDevice ? `${chosenDevice.type}${chosenDevice.serial ? ` / ${chosenDevice.serial}` : ''}` : serviceDraft.deviceSerial,
+      serviceType: serviceDraft.serviceType,
+      serviceDate: serviceDraft.serviceDate,
+      note: serviceDraft.note,
+      nextService: serviceDraft.nextService,
+    });
+    setShowServiceForm(false);
+    setServiceDraft({
+      serviceDate: todayString,
+      serviceType: 'Przegląd',
+      note: '',
+      deviceSerial: '',
+      nextService: '',
+    });
+  }
 
   return (
     <div
@@ -385,15 +433,67 @@ function ClientCardModal({ client, devices, serviceTickets, onClose }) {
           padding: 24,
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontSize: 24, fontWeight: 700 }}>Karta klienta</div>
             <div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>Wszystkie najważniejsze dane w jednym miejscu.</div>
           </div>
-          <Button onClick={onClose}>Zamknij</Button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button variant="primary" onClick={() => setShowServiceForm((prev) => !prev)}>
+              {showServiceForm ? 'Ukryj formularz serwisu' : 'Dodaj serwis'}
+            </Button>
+            <Button onClick={onClose}>Zamknij</Button>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gap: 16 }}>
+          {showServiceForm ? (
+            <Card>
+              <CardContent>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Nowy wpis serwisowy</div>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
+                    <div>
+                      <FieldLabel>Data serwisu</FieldLabel>
+                      <TextInput type="date" value={serviceDraft.serviceDate} onChange={(e) => setServiceDraft((prev) => ({ ...prev, serviceDate: e.target.value }))} />
+                    </div>
+                    <div>
+                      <FieldLabel>Typ serwisu</FieldLabel>
+                      <TextInput value={serviceDraft.serviceType} onChange={(e) => setServiceDraft((prev) => ({ ...prev, serviceType: e.target.value }))} placeholder="np. Przegląd" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <FieldLabel>Urządzenie klienta</FieldLabel>
+                    <SelectInput value={serviceDraft.deviceSerial} onChange={(e) => setServiceDraft((prev) => ({ ...prev, deviceSerial: e.target.value }))}>
+                      <option value="">Wybierz urządzenie</option>
+                      {clientDevices.map((d) => (
+                        <option key={d.id} value={d.serial || ''}>
+                          {d.type}{d.serial ? ` / ${d.serial}` : ''}
+                        </option>
+                      ))}
+                    </SelectInput>
+                  </div>
+
+                  <div>
+                    <FieldLabel>Następny przegląd</FieldLabel>
+                    <TextInput type="date" value={serviceDraft.nextService} onChange={(e) => setServiceDraft((prev) => ({ ...prev, nextService: e.target.value }))} />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Notatka serwisowa</FieldLabel>
+                    <TextArea placeholder="Co zostało zrobione, co wymaga obserwacji, jakie były uwagi" value={serviceDraft.note} onChange={(e) => setServiceDraft((prev) => ({ ...prev, note: e.target.value }))} />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <Button onClick={() => setShowServiceForm(false)}>Anuluj</Button>
+                    <Button variant="primary" onClick={handleSubmitClientService}>Zapisz serwis</Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardContent>
               <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>{client.name || 'Klient bez nazwy'}</div>
@@ -832,12 +932,71 @@ export default function BlokflowPanel() {
     }
   }
 
+  async function handleAddServiceFromClientCard(payload) {
+    if (!payload.clientName || !payload.serviceType) {
+      setSubmitState({ type: 'error', message: 'Brakuje danych do zapisu serwisu.' });
+      return;
+    }
+
+    const descriptionLines = [
+      payload.note ? `Notatka: ${payload.note}` : '',
+      payload.serviceDate ? `Data serwisu: ${payload.serviceDate}` : '',
+      payload.nextService ? `Następny przegląd: ${payload.nextService}` : '',
+    ].filter(Boolean);
+
+    const newService = {
+      id: makeId('SER'),
+      client: payload.clientName,
+      device: payload.deviceLabel || payload.deviceSerial || '',
+      kind: payload.serviceType,
+      priority: 'Niski',
+      description: descriptionLines.join(' | '),
+      preferredDate: payload.serviceDate || '',
+      status: 'Zapisane',
+    };
+
+    try {
+      if (useLiveApi) {
+        await postSheetData({
+          action: 'append',
+          sheet: SERVICE_SHEET,
+          row: {
+            'ID SERWISU': newService.id,
+            'Klient': newService.client,
+            'Urządzenie': newService.device,
+            'Typ zgłoszenia': newService.kind,
+            'Priorytet': newService.priority,
+            'Opis': newService.description,
+            'Preferowany termin': newService.preferredDate,
+            'Status': newService.status,
+          },
+        });
+      }
+
+      setServiceTickets((prev) => [newService, ...prev]);
+
+      if (payload.deviceSerial && payload.nextService) {
+        setDevices((prev) =>
+          prev.map((device) =>
+            device.serial === payload.deviceSerial
+              ? {
+                  ...device,
+                  nextService: payload.nextService,
+                  reminder: getReminderLabel(payload.nextService),
+                }
+              : device
+          )
+        );
+      }
+
+      setSubmitState({ type: 'success', message: 'Serwis został dodany z karty klienta.' });
+    } catch (error) {
+      setSubmitState({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się zapisać serwisu z karty klienta.' });
+    }
+  }
+
   const clientCards = filteredClients.map((c) => (
-    <Card
-      key={c.id}
-      onClick={() => setSelectedClient(c)}
-      style={{ cursor: 'pointer' }}
-    >
+    <Card key={c.id} onClick={() => setSelectedClient(c)} style={{ cursor: 'pointer' }}>
       <CardContent>
         <div style={{ fontWeight: 600 }}>{c.name}</div>
         <div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>{c.city || 'Brak miasta'}</div>
@@ -927,9 +1086,7 @@ export default function BlokflowPanel() {
               </div>
             )}
 
-            {(window.__adminTab || 'instalatorzy') === 'klienci' && (
-              <div style={{ display: 'grid', gap: 12 }}>{clientCards}</div>
-            )}
+            {(window.__adminTab || 'instalatorzy') === 'klienci' && <div style={{ display: 'grid', gap: 12 }}>{clientCards}</div>}
 
             {(window.__adminTab || 'instalatorzy') === 'urzadzenia' && (
               <div style={{ display: 'grid', gap: 12 }}>
@@ -1079,7 +1236,13 @@ export default function BlokflowPanel() {
         )}
       </div>
 
-      <ClientCardModal client={selectedClient} devices={devices} serviceTickets={serviceTickets} onClose={() => setSelectedClient(null)} />
+      <ClientCardModal
+        client={selectedClient}
+        devices={devices}
+        serviceTickets={serviceTickets}
+        onClose={() => setSelectedClient(null)}
+        onAddService={handleAddServiceFromClientCard}
+      />
     </div>
   );
 }
