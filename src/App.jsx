@@ -1,8 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const starterDevices = [
   {
@@ -12,15 +8,16 @@ const starterDevices = [
     serial: 'BF-2026-001',
     client: 'Anna Malinowska',
     installer: 'Klima Serwis Gdańsk',
-    installDate: '2026-02-10',
     nextService: '2027-02-10',
     status: 'Aktywne',
+    note: '',
   },
 ];
 
-// tryb API sterowany dynamicznie (żeby uniknąć pętli zgód w canvas)
 const DEFAULT_USE_LIVE_API = true;
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFp8d5tzAy49jOFwIzkPinELhulapff0KHvBJJT0Nu68UhmvnDz5Bp85BT8VnbaXvSFQ/exec';
+const APPS_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbxFp8d5tzAy49jOFwIzkPinELhulapff0KHvBJJT0Nu68UhmvnDz5Bp85BT8VnbaXvSFQ/exec';
+
 const INSTALLERS_SHEET = 'INSTALATORZY';
 const CLIENTS_SHEET = 'KLIENCI';
 const DEVICES_SHEET = 'URZADZENIA';
@@ -30,6 +27,125 @@ const INSTALLERS_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(INSTALLERS
 const CLIENTS_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(CLIENTS_SHEET)}`;
 const DEVICES_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(DEVICES_SHEET)}`;
 const SERVICE_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(SERVICE_SHEET)}`;
+
+function Card({ children, id, style }) {
+  return (
+    <div
+      id={id}
+      style={{
+        background: '#fff',
+        border: '1px solid #e5e7eb',
+        borderRadius: 16,
+        boxShadow: '0 8px 24px rgba(15,23,42,0.06)',
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CardContent({ children, style }) {
+  return <div style={{ padding: 18, ...style }}>{children}</div>;
+}
+
+function FieldLabel({ children }) {
+  return <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 6 }}>{children}</label>;
+}
+
+function TextInput(props) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: '100%',
+        padding: '12px 14px',
+        border: '1px solid #d1d5db',
+        borderRadius: 12,
+        fontSize: 14,
+        ...(props.style || {}),
+      }}
+    />
+  );
+}
+
+function TextArea(props) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: '100%',
+        minHeight: 92,
+        padding: '12px 14px',
+        border: '1px solid #d1d5db',
+        borderRadius: 12,
+        fontSize: 14,
+        resize: 'vertical',
+        ...(props.style || {}),
+      }}
+    />
+  );
+}
+
+function Button({ children, variant = 'secondary', ...props }) {
+  const base = {
+    padding: '12px 14px',
+    borderRadius: 12,
+    fontSize: 14,
+    cursor: 'pointer',
+    border: '1px solid #d1d5db',
+  };
+  const variants = {
+    primary: { background: '#111827', color: '#fff', borderColor: '#111827' },
+    secondary: { background: '#fff', color: '#111827' },
+    ghost: { background: '#f8fafc', color: '#111827' },
+    pill: { background: '#fff', color: '#111827', borderRadius: 999 },
+    activePill: { background: '#111827', color: '#fff', borderColor: '#111827', borderRadius: 999 },
+  };
+  return (
+    <button {...props} style={{ ...base, ...(variants[variant] || variants.secondary), ...(props.style || {}) }}>
+      {children}
+    </button>
+  );
+}
+
+function Badge({ children, tone = 'default' }) {
+  const tones = {
+    default: { background: '#eef2ff', color: '#3730a3' },
+    premium: { background: '#fef3c7', color: '#92400e' },
+    active: { background: '#dcfce7', color: '#166534' },
+    new: { background: '#dbeafe', color: '#1d4ed8' },
+    red: { background: '#fef2f2', color: '#b91c1c' },
+    orange: { background: '#fff7ed', color: '#c2410c' },
+    green: { background: '#ecfdf5', color: '#047857' },
+    gray: { background: '#f8fafc', color: '#475569' },
+  };
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        padding: '6px 10px',
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 500,
+        ...(tones[tone] || tones.default),
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function StatCard({ label, value }) {
+  return (
+    <Card>
+      <CardContent>
+        <div style={{ fontSize: 14, color: '#64748b' }}>{label}</div>
+        <div style={{ fontSize: 30, fontWeight: 700, marginTop: 6 }}>{value}</div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function toYes(value) {
   if (value === true) return true;
@@ -45,13 +161,35 @@ function makeId(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
 
+function parseDateOnly(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getServiceDiffDays(value) {
+  const serviceDate = parseDateOnly(value);
+  if (!serviceDate) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.floor((serviceDate - today) / (1000 * 60 * 60 * 24));
+}
+
+function scrollToId(id) {
+  const node = document.getElementById(id);
+  if (node) node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 async function fetchSheetData(url) {
   const response = await fetch(url, {
     method: 'GET',
     redirect: 'follow',
-    headers: {
-      Accept: 'application/json, text/plain;q=0.9,*/*;q=0.8',
-    },
+    headers: { Accept: 'application/json, text/plain;q=0.9,*/*;q=0.8' },
   });
 
   const rawText = await response.text();
@@ -62,13 +200,11 @@ async function fetchSheetData(url) {
 
   try {
     const parsed = JSON.parse(rawText);
-
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.error) {
       throw new Error(String(parsed.error));
     }
-
     return ensureArray(parsed);
-  } catch (error) {
+  } catch {
     throw new Error(`Nie udało się odczytać JSON z API. Odpowiedź: ${rawText.slice(0, 300)}`);
   }
 }
@@ -76,9 +212,7 @@ async function fetchSheetData(url) {
 async function postSheetData(payload) {
   const response = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-    },
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(payload),
   });
 
@@ -88,20 +222,11 @@ async function postSheetData(payload) {
     throw new Error(`HTTP ${response.status}: ${rawText || 'Brak odpowiedzi serwera'}`);
   }
 
-  try {
-    const parsed = JSON.parse(rawText);
-
-    if (parsed && typeof parsed === 'object' && parsed.ok === false) {
-      throw new Error(parsed.error || 'Apps Script odrzucił zapis.');
-    }
-
-    return parsed;
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error(`Nie udało się odczytać odpowiedzi POST. Odpowiedź: ${rawText}`);
+  const parsed = JSON.parse(rawText);
+  if (parsed && typeof parsed === 'object' && parsed.ok === false) {
+    throw new Error(parsed.error || 'Apps Script odrzucił zapis.');
   }
+  return parsed;
 }
 
 function mapInstaller(row, index) {
@@ -139,16 +264,19 @@ function mapClient(row, index) {
 }
 
 function mapDevice(row, index) {
-  const nextService = row['Termin przeglądu'] || row['Termin pierwszego przeglądu'] || '';
+  const nextService =
+    row['Termin przeglądu'] ||
+    row['Termin pierwszego przeglądu'] ||
+    row['Termin przegladu'] ||
+    '';
+  const diffDays = getServiceDiffDays(nextService);
   let reminder = '';
 
-  if (nextService) {
-    const today = new Date();
-    const serviceDate = new Date(nextService);
-    const diffDays = Math.floor((serviceDate - today) / (1000 * 60 * 60 * 24));
-
-    if (diffDays <= 7) reminder = 'Pilne';
-    else if (diffDays <= 30) reminder = 'Nadchodzi';
+  if (diffDays !== null) {
+    if (diffDays < 0) reminder = 'Po terminie';
+    else if (diffDays === 0) reminder = 'Dzisiaj';
+    else if (diffDays <= 7) reminder = 'Pilne';
+    else if (diffDays <= 30) reminder = 'W ciągu 30 dni';
   }
 
   return {
@@ -158,7 +286,7 @@ function mapDevice(row, index) {
     installer: row['Instalator'] || row['Nazwa Firmy'] || '',
     serial: row['Numer seryjny'] || row['Nr seryjny'] || row['Serial'] || '',
     status: row['Status'] || 'Aktywne',
-    pump: row['Model'] || row['Pompa'] || row['Model / pompa'] || '',
+    pump: row['Model'] || row['Pompa'] || row['Model / Pompa'] || row['Model / pompa'] || '',
     nextService,
     reminder,
     note: row['Notatka'] || row['Notatka montażowa'] || '',
@@ -178,14 +306,44 @@ function mapServiceTicket(row, index) {
   };
 }
 
-function StatCard({ label, value }) {
+function ReminderBlock({ title, items, tone }) {
+  const toneMap = {
+    red: 'red',
+    orange: 'orange',
+    green: 'green',
+    gray: 'gray',
+  };
+
   return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-sm text-slate-500">{label}</p>
-        <p className="text-2xl font-bold mt-1">{value}</p>
-      </CardContent>
-    </Card>
+    <div>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: 'grid', gap: 12 }}>
+        {items.length === 0 ? (
+          <div style={{ fontSize: 14, color: '#64748b' }}>Brak.</div>
+        ) : (
+          items.map((r) => (
+            <div key={`${title}-${r.id}`} style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{r.client || 'Brak klienta'}</div>
+                  <div style={{ fontSize: 14, color: '#64748b' }}>{r.type}</div>
+                  {r.serial ? <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>Nr seryjny: {r.serial}</div> : null}
+                </div>
+                <Badge tone={toneMap[tone] || 'gray'}>{r.level}</Badge>
+              </div>
+              <div style={{ fontSize: 14, marginTop: 10 }}>Termin przeglądu: {r.nextService}</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                {r.diffDays < 0
+                  ? `Opóźnienie: ${Math.abs(r.diffDays)} dni`
+                  : r.diffDays === 0
+                    ? 'Przegląd dzisiaj'
+                    : `Za ${r.diffDays} dni`}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -203,14 +361,6 @@ export default function BlokflowPanel() {
   const [useLiveApi, setUseLiveApi] = useState(DEFAULT_USE_LIVE_API);
   const [submitState, setSubmitState] = useState({ type: '', message: '' });
   const hasLoadedRef = useRef(false);
-
-  // AUTO POŁĄCZENIE PRZY STARCIE (bez klikania)
-  useEffect(() => {
-    if (DEFAULT_USE_LIVE_API) {
-      setUseLiveApi(true);
-      setIsConnected(true);
-    }
-  }, []);
 
   const [clientForm, setClientForm] = useState({
     name: '',
@@ -241,6 +391,13 @@ export default function BlokflowPanel() {
   });
 
   useEffect(() => {
+    if (DEFAULT_USE_LIVE_API) {
+      setUseLiveApi(true);
+      setIsConnected(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!useLiveApi || !isConnected || hasLoadedRef.current) return;
 
     let cancelled = false;
@@ -259,53 +416,17 @@ export default function BlokflowPanel() {
 
       if (cancelled) return;
 
-      if (installersResult.status === 'fulfilled') {
-        setInstallers(installersResult.value.map(mapInstaller));
-      } else {
-        setInstallers([]);
-        setErrors((prev) => ({
-          ...prev,
-          installers: installersResult.reason instanceof Error
-            ? installersResult.reason.message
-            : 'Nieznany błąd pobierania instalatorów.',
-        }));
-      }
+      if (installersResult.status === 'fulfilled') setInstallers(installersResult.value.map(mapInstaller));
+      else setErrors((prev) => ({ ...prev, installers: installersResult.reason instanceof Error ? installersResult.reason.message : 'Nieznany błąd pobierania instalatorów.' }));
 
-      if (clientsResult.status === 'fulfilled') {
-        setClients(clientsResult.value.map(mapClient));
-      } else {
-        setClients([]);
-        setErrors((prev) => ({
-          ...prev,
-          clients: clientsResult.reason instanceof Error
-            ? clientsResult.reason.message
-            : 'Nieznany błąd pobierania klientów.',
-        }));
-      }
+      if (clientsResult.status === 'fulfilled') setClients(clientsResult.value.map(mapClient));
+      else setErrors((prev) => ({ ...prev, clients: clientsResult.reason instanceof Error ? clientsResult.reason.message : 'Nieznany błąd pobierania klientów.' }));
 
-      if (devicesResult.status === 'fulfilled') {
-        setDevices(devicesResult.value.length > 0 ? devicesResult.value.map(mapDevice) : starterDevices);
-      } else {
-        setDevices(starterDevices);
-        setErrors((prev) => ({
-          ...prev,
-          devices: devicesResult.reason instanceof Error
-            ? devicesResult.reason.message
-            : 'Nieznany błąd pobierania urządzeń.',
-        }));
-      }
+      if (devicesResult.status === 'fulfilled') setDevices(devicesResult.value.length > 0 ? devicesResult.value.map(mapDevice) : starterDevices);
+      else setErrors((prev) => ({ ...prev, devices: devicesResult.reason instanceof Error ? devicesResult.reason.message : 'Nieznany błąd pobierania urządzeń.' }));
 
-      if (serviceResult.status === 'fulfilled') {
-        setServiceTickets(serviceResult.value.map(mapServiceTicket));
-      } else {
-        setServiceTickets([]);
-        setErrors((prev) => ({
-          ...prev,
-          service: serviceResult.reason instanceof Error
-            ? serviceResult.reason.message
-            : 'Nieznany błąd pobierania serwisu.',
-        }));
-      }
+      if (serviceResult.status === 'fulfilled') setServiceTickets(serviceResult.value.map(mapServiceTicket));
+      else setErrors((prev) => ({ ...prev, service: serviceResult.reason instanceof Error ? serviceResult.reason.message : 'Nieznany błąd pobierania serwisu.' }));
 
       setLoading({ installers: false, clients: false, devices: false, service: false });
     }
@@ -315,13 +436,13 @@ export default function BlokflowPanel() {
     return () => {
       cancelled = true;
     };
-  }, [isConnected]);
+  }, [isConnected, useLiveApi]);
 
   const filteredInstallers = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return installers;
     return installers.filter((i) =>
-      [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan]
+      [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan, i.type]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
@@ -355,26 +476,19 @@ export default function BlokflowPanel() {
 
   const installerQuickStats = useMemo(() => {
     const activeDevices = devices.filter((d) => (d.status || '').toLowerCase() !== 'nieaktywne').length;
-    return {
-      clients: clients.length,
-      devices: devices.length,
-      activeDevices,
-    };
+    return { clients: clients.length, devices: devices.length, activeDevices };
   }, [clients, devices]);
 
   const upcomingReminders = useMemo(() => {
-    const today = new Date();
-
     return devices
       .map((d) => {
         const nextService = d.nextService || '';
-        if (!nextService) return null;
-
-        const serviceDate = new Date(nextService);
-        const diffDays = Math.floor((serviceDate - today) / (1000 * 60 * 60 * 24));
+        const diffDays = getServiceDiffDays(nextService);
+        if (diffDays === null) return null;
 
         let level = '';
         if (diffDays < 0) level = 'Po terminie';
+        else if (diffDays === 0) level = 'Dzisiaj';
         else if (diffDays <= 7) level = 'Pilne';
         else if (diffDays <= 30) level = 'W ciągu 30 dni';
         else return null;
@@ -393,38 +507,32 @@ export default function BlokflowPanel() {
       .sort((a, b) => a.diffDays - b.diffDays);
   }, [devices]);
 
+  const groupedReminders = useMemo(
+    () => ({
+      overdue: upcomingReminders.filter((r) => r.level === 'Po terminie'),
+      today: upcomingReminders.filter((r) => r.level === 'Dzisiaj'),
+      week: upcomingReminders.filter((r) => r.level === 'Pilne'),
+      month: upcomingReminders.filter((r) => r.level === 'W ciągu 30 dni'),
+    }),
+    [upcomingReminders]
+  );
+
+  function refreshLiveData() {
+    hasLoadedRef.current = false;
+    setIsConnected(false);
+    setTimeout(() => setIsConnected(true), 50);
+  }
+
   function resetClientForm() {
-    setClientForm({
-      name: '',
-      phone: '',
-      city: '',
-      address: '',
-      source: 'Własny klient',
-      note: '',
-    });
+    setClientForm({ name: '', phone: '', city: '', address: '', source: 'Własny klient', note: '' });
   }
 
   function resetDeviceForm() {
-    setDeviceForm({
-      type: 'BLOKFLOW Basic',
-      client: '',
-      serial: '',
-      status: 'Aktywne',
-      pump: '',
-      nextService: '',
-      note: '',
-    });
+    setDeviceForm({ type: 'BLOKFLOW Basic', client: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
   }
 
   function resetServiceForm() {
-    setServiceForm({
-      client: '',
-      device: '',
-      kind: 'Przegląd',
-      priority: 'Niski',
-      description: '',
-      preferredDate: '',
-    });
+    setServiceForm({ client: '', device: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '' });
   }
 
   async function handleSaveClient() {
@@ -446,7 +554,7 @@ export default function BlokflowPanel() {
 
     try {
       if (useLiveApi) {
-        const result = await postSheetData({
+        await postSheetData({
           action: 'append',
           sheet: CLIENTS_SHEET,
           row: {
@@ -460,19 +568,13 @@ export default function BlokflowPanel() {
             'Notatka': record.note,
           },
         });
-
-        console.log('ODPOWIEDŹ Z APPS SCRIPT:', result);
       }
 
       setClients((prev) => [record, ...prev]);
       resetClientForm();
       setSubmitState({ type: 'success', message: 'Klient został zapisany.' });
     } catch (error) {
-      console.error('BŁĄD ZAPISU:', error);
-      setSubmitState({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Nie udało się zapisać klienta.',
-      });
+      setSubmitState({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się zapisać klienta.' });
     }
   }
 
@@ -500,15 +602,13 @@ export default function BlokflowPanel() {
           action: 'append',
           sheet: DEVICES_SHEET,
           row: {
-            'ID URZADZENIA': record.id,
-            'Typ': record.type,
+            'Typ urządzenia': record.type,
             'Klient': record.client,
-            'Instalator': record.installer,
             'Numer seryjny': record.serial,
             'Status': record.status,
-            'Model': record.pump,
+            'Model / Pompa': record.pump,
             'Termin przeglądu': record.nextService,
-            'Notatka montażowa': record.note,
+            'Notatka': record.note,
           },
         });
       }
@@ -517,10 +617,7 @@ export default function BlokflowPanel() {
       resetDeviceForm();
       setSubmitState({ type: 'success', message: 'Urządzenie zostało zapisane.' });
     } catch (error) {
-      setSubmitState({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Nie udało się zapisać urządzenia.',
-      });
+      setSubmitState({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się zapisać urządzenia.' });
     }
   }
 
@@ -563,537 +660,235 @@ export default function BlokflowPanel() {
       resetServiceForm();
       setSubmitState({ type: 'success', message: 'Zgłoszenie serwisowe zostało zapisane.' });
     } catch (error) {
-      setSubmitState({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Nie udało się wysłać zgłoszenia.',
-      });
+      setSubmitState({ type: 'error', message: error instanceof Error ? error.message : 'Nie udało się wysłać zgłoszenia.' });
     }
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-wrap justify-between items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">BLOKFLOW PANEL</h1>
-          <p className="text-sm text-slate-500 mt-1">Jeden system, dwa widoki: admin i instalator.</p>
+    <div style={{ padding: 24, background: '#f5f7fb', minHeight: '100vh', color: '#111827' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', display: 'grid', gap: 24 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+          <div>
+            <h1 style={{ fontSize: 32, fontWeight: 700, margin: 0 }}>BLOKFLOW PANEL</h1>
+            <p style={{ fontSize: 14, color: '#64748b', marginTop: 8 }}>Jeden system, dwa widoki: admin i instalator.</p>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, padding: 4, border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff' }}>
+            <Button variant={viewMode === 'admin' ? 'primary' : 'secondary'} onClick={() => setViewMode('admin')}>Panel admina</Button>
+            <Button variant={viewMode === 'installer' ? 'primary' : 'secondary'} onClick={() => setViewMode('installer')}>Panel instalatora</Button>
+          </div>
+
+          <div style={{ minWidth: 260, maxWidth: 360, width: '100%' }}>
+            <TextInput placeholder="Szukaj..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 rounded-lg border p-1 bg-white">
-          <button
-            type="button"
-            onClick={() => setViewMode('admin')}
-            className={`px-3 py-2 rounded-md text-sm ${viewMode === 'admin' ? 'bg-black text-white' : 'text-slate-600'}`}
-          >
-            Panel admina
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('installer')}
-            className={`px-3 py-2 rounded-md text-sm ${viewMode === 'installer' ? 'bg-black text-white' : 'text-slate-600'}`}
-          >
-            Panel instalatora
-          </button>
-        </div>
-
-        <Input
-          placeholder="Szukaj..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
-
-      {submitState.message ? (
-        <Card>
-          <CardContent className={`p-4 text-sm ${submitState.type === 'error' ? 'text-red-600' : 'text-emerald-700'}`}>
-            {submitState.message}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {viewMode === 'admin' ? (
-        <>
-          <div className="flex flex-wrap gap-3 items-center">
-            <button
-              type="button"
-              onClick={() => { setUseLiveApi(true); setIsConnected(true); }}
-              disabled={false}
-              className="px-4 py-2 rounded-md text-white text-sm bg-black"
-            >
-              Połącz z Google Sheets
-            </button>
-            <p className="text-sm text-slate-500">
-              Kliknij, aby połączyć z Google Sheets (może wyskoczyć zgoda – to normalne).
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <StatCard label="Instalatorzy" value={installers.length} />
-            <StatCard label="Klienci" value={clients.length} />
-            <StatCard label="Urządzenia" value={devices.length} />
-            <StatCard label="Aktywni / Premium" value={installers.filter((i) => i.plan === 'Aktywny' || i.plan === 'Premium').length} />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
-            <Card>
-              <CardContent className="p-4">
-                <p className="font-semibold mb-3">Szybki podgląd biznesowy</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                  <div className="rounded-lg border p-3">
-                    <p className="text-slate-500">Nowi instalatorzy</p>
-                    <p className="text-xl font-semibold mt-1">{installers.filter((i) => i.plan === 'Nowy').length}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-slate-500">Instalatorzy premium</p>
-                    <p className="text-xl font-semibold mt-1">{installers.filter((i) => i.plan === 'Premium').length}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-slate-500">Klienci przypisani</p>
-                    <p className="text-xl font-semibold mt-1">{clients.filter((c) => c.installer).length}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <p className="font-semibold mb-3">Szybkie akcje</p>
-                <div className="space-y-2">
-                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Dodaj instalatora</button>
-                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Dodaj klienta</button>
-                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Dodaj urządzenie</button>
-                  <button type="button" className="w-full rounded-md border px-3 py-2 text-left text-sm">Przejdź do mapy partnerów</button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* MAPA INSTALATORÓW (MVP) */}
+        {submitState.message ? (
           <Card>
-            <CardContent className="p-4">
-              <p className="font-semibold mb-3">Mapa instalatorów (MVP)</p>
+            <CardContent>
+              <div style={{ fontSize: 14, color: submitState.type === 'error' ? '#b91c1c' : '#047857' }}>{submitState.message}</div>
+            </CardContent>
+          </Card>
+        ) : null}
 
-              <div className="flex gap-2 mb-3">
-                {['Wszyscy','Pompy ciepła','Klimatyzacja'].map(t => (
-                  <button key={t}
-                    onClick={() => setFilterType(t)}
-                    className={`px-3 py-1 text-xs rounded-full border ${filterType===t ? 'bg-black text-white':'bg-white'}`}>
-                    {t}
-                  </button>
-                ))}
-              </div>
+        {viewMode === 'admin' ? (
+          <>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+              <Button variant="primary" onClick={() => { setUseLiveApi(true); setIsConnected(true); hasLoadedRef.current = false; }}>Połącz z Google Sheets</Button>
+              <div style={{ fontSize: 14, color: '#64748b' }}>Dane ładują się automatycznie, ten przycisk działa też jako odśwież.</div>
+            </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {installers
-                  .filter(i => filterType==='Wszyscy' || i.type===filterType)
-                  .map(i => (
-                    <div key={i.id} className="border rounded-lg p-3 text-sm">
-                      <div className="font-medium">{i.company}</div>
-                      <div className="text-slate-500">{i.city}</div>
-                      <div className="text-xs mt-1">{i.type}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 16 }}>
+              <StatCard label="Instalatorzy" value={installers.length} />
+              <StatCard label="Klienci" value={clients.length} />
+              <StatCard label="Urządzenia" value={devices.length} />
+              <StatCard label="Aktywni / Premium" value={installers.filter((i) => i.plan === 'Aktywny' || i.plan === 'Premium').length} />
+            </div>
+
+            <Card>
+              <CardContent>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Mapa instalatorów (MVP)</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                  {['Wszyscy', 'Pompy ciepła', 'Klimatyzacja'].map((t) => (
+                    <Button key={t} variant={filterType === t ? 'activePill' : 'pill'} onClick={() => setFilterType(t)}>{t}</Button>
+                  ))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>
+                  {installers.filter((i) => filterType === 'Wszyscy' || i.type === filterType).map((i) => (
+                    <div key={i.id} style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14 }}>
+                      <div style={{ fontWeight: 600 }}>{i.company}</div>
+                      <div style={{ fontSize: 14, color: '#64748b' }}>{i.city}</div>
+                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{i.type}</div>
                     </div>
                   ))}
-              </div>
-
-            </CardContent>
-          </Card>
-
-          <Tabs defaultValue="instalatorzy">
-            <TabsList>
-              <TabsTrigger value="instalatorzy">Instalatorzy</TabsTrigger>
-              <TabsTrigger value="klienci">Klienci</TabsTrigger>
-              <TabsTrigger value="urzadzenia">Urządzenia</TabsTrigger>
-              <TabsTrigger value="serwis">Serwis</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="instalatorzy" className="space-y-3">
-              {loading.installers ? (
-                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie instalatorów...</CardContent></Card>
-              ) : errors.installers ? (
-                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania instalatorów: {errors.installers}<div className="mt-2 break-all text-xs text-slate-500">{INSTALLERS_API}</div></CardContent></Card>
-              ) : filteredInstallers.length === 0 ? (
-                <Card><CardContent className="p-4 text-sm text-slate-500">Brak instalatorów do wyświetlenia.</CardContent></Card>
-              ) : (
-                filteredInstallers.map((i) => (
-                  <Card key={i.id}>
-                    <CardContent className="p-4">
-                      <p className="font-medium">{i.company}</p>
-                      {i.owner ? <p className="text-sm">{i.owner}</p> : null}
-                      <p className="text-sm">{i.city}</p>
-                      <Badge variant={i.plan === 'Premium' ? 'default' : 'secondary'}>{i.plan}</Badge>
-                      {i.region ? <p className="text-sm text-slate-500 mt-1">{i.region}</p> : null}
-                      {i.registrationDate ? <p className="text-xs text-slate-500">Rejestracja: {i.registrationDate}</p> : null}
-                      {i.phone ? <p className="text-sm mt-1">{i.phone}</p> : null}
-                      {i.email ? <p className="text-sm">{i.email}</p> : null}
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </TabsContent>
-
-            <TabsContent value="klienci" className="space-y-3">
-              {loading.clients ? (
-                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie klientów...</CardContent></Card>
-              ) : errors.clients ? (
-                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania klientów: {errors.clients}<div className="mt-2 break-all text-xs text-slate-500">{CLIENTS_API}</div></CardContent></Card>
-              ) : filteredClients.length === 0 ? (
-                <Card><CardContent className="p-4 text-sm text-slate-500">Brak klientów do wyświetlenia.</CardContent></Card>
-              ) : (
-                filteredClients.map((c) => (
-                  <Card key={c.id}>
-                    <CardContent className="p-4">
-                      <p className="font-medium">{c.name}</p>
-                      <p className="text-sm">{c.city}</p>
-                      {c.phone ? <p className="text-sm">{c.phone}</p> : null}
-                      {c.installer ? <p className="text-sm">Instalator: {c.installer}</p> : null}
-                      <Badge>{c.source}</Badge>
-                      {c.name ? <div className="mt-2 text-xs text-slate-500">Karta klienta gotowa do rozbudowy o zgłoszenia i historię serwisową.</div> : null}
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </TabsContent>
-
-            <TabsContent value="urzadzenia" className="space-y-3">
-              {loading.devices ? (
-                <Card><CardContent className="p-4 text-sm text-slate-500">Ładowanie urządzeń...</CardContent></Card>
-              ) : errors.devices ? (
-                <Card><CardContent className="p-4 text-sm text-red-600">Błąd pobierania urządzeń: {errors.devices}<div className="mt-2 break-all text-xs text-slate-500">{DEVICES_API}</div></CardContent></Card>
-              ) : filteredDevices.length === 0 ? (
-                <Card><CardContent className="p-4 text-sm text-slate-500">Brak urządzeń do wyświetlenia.</CardContent></Card>
-              ) : (
-                filteredDevices.map((d) => (
-                  <Card key={d.id}>
-                    <CardContent className="p-4">
-                      <p className="font-medium">{d.type}</p>
-                      <p className="text-sm">Klient: {d.client || 'Brak danych'}</p>
-                      <p className="text-sm">Instalator: {d.installer || 'Brak danych'}</p>
-                      <p className="text-sm">Nr seryjny: {d.serial || 'Brak danych'}</p>
-                      <p className="text-sm">Status: {d.status || 'Brak danych'}</p>
-                      {d.client || d.installer ? <div className="mt-2 text-xs text-slate-500">Urządzenie gotowe do połączenia z przeglądami, gwarancją i historią serwisu.</div> : null}
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </TabsContent>
-
-            <TabsContent value="serwis" className="space-y-3">
-              {loading.service ? (
-                <Card>
-                  <CardContent className="p-4 text-sm text-slate-500">
-                    Ładowanie zgłoszeń serwisowych...
-                  </CardContent>
-                </Card>
-              ) : errors.service ? (
-                <Card>
-                  <CardContent className="p-4 text-sm text-red-600">
-                    Błąd pobierania serwisu: {errors.service}
-                    <div className="mt-2 break-all text-xs text-slate-500">{SERVICE_API}</div>
-                  </CardContent>
-                </Card>
-              ) : serviceTickets.length === 0 ? (
-                <Card>
-                  <CardContent className="p-4 text-sm text-slate-500">
-                    Brak zgłoszeń serwisowych.
-                  </CardContent>
-                </Card>
-              ) : (
-                serviceTickets.map((s) => (
-                  <Card key={s.id}>
-                    <CardContent className="p-4">
-                      <p className="font-medium">{s.kind}</p>
-                      <p className="text-sm">Klient: {s.client}</p>
-                      <p className="text-sm">Urządzenie: {s.device}</p>
-                      <p className="text-sm">Priorytet: {s.priority}</p>
-                      <p className="text-sm text-slate-500">{s.description}</p>
-                      {s.preferredDate ? <p className="text-xs text-slate-400 mt-1">Termin: {s.preferredDate}</p> : null}
-                      <p className="text-xs text-slate-400 mt-1">Status: {s.status}</p>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </TabsContent>
-          </Tabs>
-        </>
-      ) : (
-        <div className="space-y-4 max-w-md mx-auto">
-          
-
-          <Card>
-            <CardContent className="p-4">
-              <p className="font-semibold mb-3">Szybkie akcje instalatora</p>
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => document.getElementById('clientForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left bg-slate-50">Dodaj klienta</button>
-                <button onClick={() => document.getElementById('deviceForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Dodaj urządzenie</button>
-                <button onClick={() => document.getElementById('serviceForm')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Zgłoś serwis</button>
-                <button onClick={() => document.getElementById('remindersSection')?.scrollIntoView({behavior:'smooth'})} type="button" className="rounded-xl border px-3 py-4 text-sm text-left">Moje przypomnienia</button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div id="clientForm"><Card>
-            <CardContent className="p-4 space-y-4">
-              <div>
-                <p className="font-semibold">Dodaj klienta</p>
-                <p className="text-sm text-slate-500 mt-1">Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.</p>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="text-sm font-medium">Imię i nazwisko / nazwa klienta</label>
-                  <Input placeholder="np. Anna Nowak" className="mt-1" value={clientForm.name} onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))} />
                 </div>
+              </CardContent>
+            </Card>
 
-                <div className="grid grid-cols-2 gap-3">
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {['instalatorzy', 'klienci', 'urzadzenia', 'serwis'].map((tab) => (
+                <Button key={tab} variant={tab === (window.__adminTab || 'instalatorzy') ? 'primary' : 'secondary'} onClick={() => { window.__adminTab = tab; setSearch((s) => s); }}>
+                  {tab === 'instalatorzy' ? 'Instalatorzy' : tab === 'klienci' ? 'Klienci' : tab === 'urzadzenia' ? 'Urządzenia' : 'Serwis'}
+                </Button>
+              ))}
+            </div>
+
+            {(window.__adminTab || 'instalatorzy') === 'instalatorzy' && (
+              <div style={{ display: 'grid', gap: 12 }}>
+                {loading.installers ? <Card><CardContent><div style={{ fontSize: 14, color: '#64748b' }}>Ładowanie instalatorów...</div></CardContent></Card> : null}
+                {errors.installers ? <Card><CardContent><div style={{ fontSize: 14, color: '#b91c1c' }}>Błąd pobierania instalatorów: {errors.installers}</div></CardContent></Card> : null}
+                {filteredInstallers.map((i) => (
+                  <Card key={i.id}><CardContent><div style={{ fontWeight: 600 }}>{i.company}</div>{i.owner ? <div style={{ fontSize: 14 }}>{i.owner}</div> : null}<div style={{ fontSize: 14 }}>{i.city}</div><div style={{ marginTop: 8 }}><Badge tone={i.plan === 'Premium' ? 'premium' : i.plan === 'Aktywny' ? 'active' : i.plan === 'Nowy' ? 'new' : 'default'}>{i.plan}</Badge></div></CardContent></Card>
+                ))}
+              </div>
+            )}
+
+            {(window.__adminTab || 'instalatorzy') === 'klienci' && (
+              <div style={{ display: 'grid', gap: 12 }}>
+                {filteredClients.map((c) => (
+                  <Card key={c.id}><CardContent><div style={{ fontWeight: 600 }}>{c.name}</div><div style={{ fontSize: 14 }}>{c.city}</div>{c.phone ? <div style={{ fontSize: 14 }}>{c.phone}</div> : null}<div style={{ marginTop: 8 }}><Badge>{c.source}</Badge></div></CardContent></Card>
+                ))}
+              </div>
+            )}
+
+            {(window.__adminTab || 'instalatorzy') === 'urzadzenia' && (
+              <div style={{ display: 'grid', gap: 12 }}>
+                {filteredDevices.map((d) => (
+                  <Card key={d.id}><CardContent><div style={{ fontWeight: 600 }}>{d.type}</div><div style={{ fontSize: 14 }}>Klient: {d.client || 'Brak danych'}</div><div style={{ fontSize: 14 }}>Termin przeglądu: {d.nextService || 'Brak'}</div></CardContent></Card>
+                ))}
+              </div>
+            )}
+
+            {(window.__adminTab || 'instalatorzy') === 'serwis' && (
+              <div style={{ display: 'grid', gap: 12 }}>
+                {serviceTickets.length === 0 ? <Card><CardContent><div style={{ fontSize: 14, color: '#64748b' }}>Brak zgłoszeń serwisowych.</div></CardContent></Card> : null}
+                {serviceTickets.map((s) => (
+                  <Card key={s.id}><CardContent><div style={{ fontWeight: 600 }}>{s.kind}</div><div style={{ fontSize: 14 }}>Klient: {s.client}</div><div style={{ fontSize: 14 }}>Urządzenie: {s.device}</div><div style={{ fontSize: 14 }}>Priorytet: {s.priority}</div></CardContent></Card>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ maxWidth: 560, margin: '0 auto', display: 'grid', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+              <StatCard label="Moi klienci" value={installerQuickStats.clients} />
+              <StatCard label="Urządzenia" value={installerQuickStats.devices} />
+              <StatCard label="Aktywne" value={installerQuickStats.activeDevices} />
+            </div>
+
+            <Card>
+              <CardContent>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Zakładki instalatora</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                  <Button onClick={() => scrollToId('clientForm')} style={{ textAlign: 'left' }}>Klienci</Button>
+                  <Button onClick={() => scrollToId('deviceForm')} style={{ textAlign: 'left' }}>Urządzenia</Button>
+                  <Button onClick={() => scrollToId('serviceForm')} style={{ textAlign: 'left' }}>Serwis</Button>
+                  <Button onClick={() => scrollToId('remindersSection')} style={{ textAlign: 'left' }}>Przypomnienia</Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Szybkie akcje instalatora</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                  <Button variant="ghost" onClick={() => scrollToId('clientForm')} style={{ textAlign: 'left' }}>Dodaj klienta</Button>
+                  <Button onClick={() => scrollToId('deviceForm')} style={{ textAlign: 'left' }}>Dodaj urządzenie</Button>
+                  <Button onClick={() => scrollToId('serviceForm')} style={{ textAlign: 'left' }}>Zgłoś serwis</Button>
+                  <Button onClick={() => scrollToId('remindersSection')} style={{ textAlign: 'left' }}>Moje przypomnienia</Button>
+                  <Button onClick={refreshLiveData} style={{ textAlign: 'left', gridColumn: '1 / -1' }}>Odśwież dane</Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card id="clientForm">
+              <CardContent>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>Dodaj klienta</div>
+                <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.</div>
+                <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
                   <div>
-                    <label className="text-sm font-medium">Telefon</label>
-                    <Input placeholder="np. 500 600 700" className="mt-1" value={clientForm.phone} onChange={(e) => setClientForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                    <FieldLabel>Imię i nazwisko / nazwa klienta</FieldLabel>
+                    <TextInput placeholder="np. Anna Nowak" value={clientForm.name} onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))} />
                   </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <div><FieldLabel>Telefon</FieldLabel><TextInput placeholder="np. 500 600 700" value={clientForm.phone} onChange={(e) => setClientForm((prev) => ({ ...prev, phone: e.target.value }))} /></div>
+                    <div><FieldLabel>Miasto</FieldLabel><TextInput placeholder="np. Gdańsk" value={clientForm.city} onChange={(e) => setClientForm((prev) => ({ ...prev, city: e.target.value }))} /></div>
+                  </div>
+                  <div><FieldLabel>Adres montażu</FieldLabel><TextInput placeholder="Ulica, numer domu" value={clientForm.address} onChange={(e) => setClientForm((prev) => ({ ...prev, address: e.target.value }))} /></div>
                   <div>
-                    <label className="text-sm font-medium">Miasto</label>
-                    <Input placeholder="np. Gdańsk" className="mt-1" value={clientForm.city} onChange={(e) => setClientForm((prev) => ({ ...prev, city: e.target.value }))} />
+                    <FieldLabel>Źródło klienta</FieldLabel>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {['Własny klient', 'Lead BLOKFLOW', 'Polecenie'].map((option) => (
+                        <Button key={option} variant={clientForm.source === option ? 'activePill' : 'pill'} onClick={() => setClientForm((prev) => ({ ...prev, source: option }))}>{option}</Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div><FieldLabel>Notatka</FieldLabel><TextArea placeholder="Krótka informacja o kliencie, budynku lub planowanym montażu" value={clientForm.note} onChange={(e) => setClientForm((prev) => ({ ...prev, note: e.target.value }))} /></div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <Button onClick={resetClientForm}>Wyczyść</Button>
+                    <Button variant="primary" onClick={handleSaveClient}>Zapisz klienta</Button>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
 
-                <div>
-                  <label className="text-sm font-medium">Adres montażu</label>
-                  <Input placeholder="Ulica, numer domu" className="mt-1" value={clientForm.address} onChange={(e) => setClientForm((prev) => ({ ...prev, address: e.target.value }))} />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Źródło klienta</label>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {['Własny klient', 'Lead BLOKFLOW', 'Polecenie'].map((option) => (
-                      <button key={option} type="button" onClick={() => setClientForm((prev) => ({ ...prev, source: option }))} className={`rounded-full border px-3 py-1 text-xs ${clientForm.source === option ? 'bg-black text-white' : 'bg-white'}`}>
-                        {option}
-                      </button>
-                    ))}
+            <Card id="deviceForm">
+              <CardContent>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>Dodaj urządzenie</div>
+                <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>Drugi krok po kliencie — rejestracja BLOKFLOW lub innego urządzenia z numerem seryjnym i statusem.</div>
+                <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+                  <div><FieldLabel>Typ urządzenia</FieldLabel><TextInput placeholder="np. BLOKFLOW Basic" value={deviceForm.type} onChange={(e) => setDeviceForm((prev) => ({ ...prev, type: e.target.value }))} /></div>
+                  <div><FieldLabel>Klient</FieldLabel><TextInput placeholder="np. Anna Nowak" value={deviceForm.client} onChange={(e) => setDeviceForm((prev) => ({ ...prev, client: e.target.value }))} /></div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <div><FieldLabel>Numer seryjny</FieldLabel><TextInput placeholder="np. BF-2026-001" value={deviceForm.serial} onChange={(e) => setDeviceForm((prev) => ({ ...prev, serial: e.target.value }))} /></div>
+                    <div><FieldLabel>Status</FieldLabel><TextInput placeholder="np. Aktywne" value={deviceForm.status} onChange={(e) => setDeviceForm((prev) => ({ ...prev, status: e.target.value }))} /></div>
+                  </div>
+                  <div><FieldLabel>Model / pompa</FieldLabel><TextInput placeholder="np. Panasonic Aquarea 7 kW" value={deviceForm.pump} onChange={(e) => setDeviceForm((prev) => ({ ...prev, pump: e.target.value }))} /></div>
+                  <div><FieldLabel>Termin pierwszego przeglądu</FieldLabel><TextInput type="date" value={deviceForm.nextService} onChange={(e) => setDeviceForm((prev) => ({ ...prev, nextService: e.target.value }))} /></div>
+                  <div><FieldLabel>Notatka montażowa</FieldLabel><TextArea placeholder="Informacje o montażu, konfiguracji, miejscu ustawienia lub uwagach serwisowych" value={deviceForm.note} onChange={(e) => setDeviceForm((prev) => ({ ...prev, note: e.target.value }))} /></div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <Button onClick={resetDeviceForm}>Wyczyść</Button>
+                    <Button variant="primary" onClick={handleSaveDevice}>Zapisz urządzenie</Button>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
 
-                <div>
-                  <label className="text-sm font-medium">Notatka</label>
-                  <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Krótka informacja o kliencie, budynku lub planowanym montażu" value={clientForm.note} onChange={(e) => setClientForm((prev) => ({ ...prev, note: e.target.value }))} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetClientForm}>Wyczyść</button>
-                <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveClient}>Zapisz klienta</button>
-              </div>
-            </CardContent>
-          </Card></div>
-
-          <div id="deviceForm"><Card>
-            <CardContent className="p-4 space-y-4">
-              <div>
-                <p className="font-semibold">Dodaj urządzenie</p>
-                <p className="text-sm text-slate-500 mt-1">Drugi krok po kliencie — rejestracja BLOKFLOW lub innego urządzenia z numerem seryjnym i statusem.</p>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="text-sm font-medium">Typ urządzenia</label>
-                  <Input placeholder="np. BLOKFLOW Basic" className="mt-1" value={deviceForm.type} onChange={(e) => setDeviceForm((prev) => ({ ...prev, type: e.target.value }))} />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Klient</label>
-                  <Input placeholder="np. Anna Nowak" className="mt-1" value={deviceForm.client} onChange={(e) => setDeviceForm((prev) => ({ ...prev, client: e.target.value }))} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium">Numer seryjny</label>
-                    <Input placeholder="np. BF-2026-001" className="mt-1" value={deviceForm.serial} onChange={(e) => setDeviceForm((prev) => ({ ...prev, serial: e.target.value }))} />
+            <Card id="serviceForm">
+              <CardContent>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>Zgłoś serwis</div>
+                <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>Szybkie zgłoszenie przeglądu lub awarii dla istniejącego urządzenia.</div>
+                <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+                  <div><FieldLabel>Klient</FieldLabel><TextInput placeholder="np. Anna Nowak" value={serviceForm.client} onChange={(e) => setServiceForm((prev) => ({ ...prev, client: e.target.value }))} /></div>
+                  <div><FieldLabel>Urządzenie / nr seryjny</FieldLabel><TextInput placeholder="np. BF-2026-001" value={serviceForm.device} onChange={(e) => setServiceForm((prev) => ({ ...prev, device: e.target.value }))} /></div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <div><FieldLabel>Typ zgłoszenia</FieldLabel><TextInput placeholder="np. Przegląd / Awaria" value={serviceForm.kind} onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))} /></div>
+                    <div><FieldLabel>Priorytet</FieldLabel><TextInput placeholder="np. Niski / Pilny" value={serviceForm.priority} onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))} /></div>
                   </div>
-                  <div>
-                    <label className="text-sm font-medium">Status</label>
-                    <Input placeholder="np. Aktywne" className="mt-1" value={deviceForm.status} onChange={(e) => setDeviceForm((prev) => ({ ...prev, status: e.target.value }))} />
+                  <div><FieldLabel>Opis problemu</FieldLabel><TextArea placeholder="Opisz problem lub zakres przeglądu" value={serviceForm.description} onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))} /></div>
+                  <div><FieldLabel>Preferowany termin</FieldLabel><TextInput type="date" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} /></div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <Button onClick={resetServiceForm}>Wyczyść</Button>
+                    <Button variant="primary" onClick={handleSaveService}>Wyślij zgłoszenie</Button>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
 
-                <div>
-                  <label className="text-sm font-medium">Model / pompa</label>
-                  <Input placeholder="np. Panasonic Aquarea 7 kW" className="mt-1" value={deviceForm.pump} onChange={(e) => setDeviceForm((prev) => ({ ...prev, pump: e.target.value }))} />
+            <Card id="remindersSection">
+              <CardContent>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Moje przypomnienia przeglądów</div>
+                <div style={{ display: 'grid', gap: 16 }}>
+                  <ReminderBlock title="🔴 Po terminie" items={groupedReminders.overdue} tone="red" />
+                  <ReminderBlock title="🟢 Dzisiaj" items={groupedReminders.today} tone="green" />
+                  <ReminderBlock title="🟠 Na ten tydzień" items={groupedReminders.week} tone="orange" />
+                  <ReminderBlock title="🟡 W ciągu 30 dni" items={groupedReminders.month} tone="gray" />
                 </div>
-
-                <div>
-                  <label className="text-sm font-medium">Termin pierwszego przeglądu</label>
-                  <Input type="date" className="mt-1" value={deviceForm.nextService} onChange={(e) => setDeviceForm((prev) => ({ ...prev, nextService: e.target.value }))} />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Notatka montażowa</label>
-                  <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Informacje o montażu, konfiguracji, miejscu ustawienia lub uwagach serwisowych" value={deviceForm.note} onChange={(e) => setDeviceForm((prev) => ({ ...prev, note: e.target.value }))} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetDeviceForm}>Wyczyść</button>
-                <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveDevice}>Zapisz urządzenie</button>
-              </div>
-            </CardContent>
-          </Card></div>
-
-          <div id="serviceForm"><Card>
-            <CardContent className="p-4 space-y-4">
-              <div>
-                <p className="font-semibold">Zgłoś serwis</p>
-                <p className="text-sm text-slate-500 mt-1">Szybkie zgłoszenie przeglądu lub awarii dla istniejącego urządzenia.</p>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="text-sm font-medium">Klient</label>
-                  <Input placeholder="np. Anna Nowak" className="mt-1" value={serviceForm.client} onChange={(e) => setServiceForm((prev) => ({ ...prev, client: e.target.value }))} />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Urządzenie / nr seryjny</label>
-                  <Input placeholder="np. BF-2026-001" className="mt-1" value={serviceForm.device} onChange={(e) => setServiceForm((prev) => ({ ...prev, device: e.target.value }))} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium">Typ zgłoszenia</label>
-                    <Input placeholder="np. Przegląd / Awaria" className="mt-1" value={serviceForm.kind} onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Priorytet</label>
-                    <Input placeholder="np. Niski / Pilny" className="mt-1" value={serviceForm.priority} onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))} />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Opis problemu</label>
-                  <textarea className="mt-1 min-h-[90px] w-full rounded-md border px-3 py-2 text-sm" placeholder="Opisz problem lub zakres przeglądu" value={serviceForm.description} onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))} />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Preferowany termin</label>
-                  <Input type="date" className="mt-1" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <button type="button" className="rounded-xl border px-3 py-3 text-sm" onClick={resetServiceForm}>Wyczyść</button>
-                <button type="button" className="rounded-xl bg-black text-white px-3 py-3 text-sm" onClick={handleSaveService}>Wyślij zgłoszenie</button>
-              </div>
-            </CardContent>
-          </Card></div>
-
-          <Card id="remindersSection">
-            <CardContent className="p-4">
-              <p className="font-semibold mb-3">Moje przypomnienia przeglądów</p>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-sm font-medium mb-2">🔴 Po terminie</p>
-                  <div className="space-y-3">
-                    {upcomingReminders.filter((r) => r.level === 'Po terminie').length === 0 ? (
-                      <p className="text-sm text-slate-500">Brak.</p>
-                    ) : (
-                      upcomingReminders
-                        .filter((r) => r.level === 'Po terminie')
-                        .map((r) => (
-                          <div key={`overdue-${r.id}`} className="rounded-xl border p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="font-medium">{r.client || 'Brak klienta'}</p>
-                                <p className="text-sm text-slate-500">{r.type}</p>
-                                {r.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {r.serial}</p> : null}
-                              </div>
-                              <div className="text-xs px-2 py-1 rounded-full border text-red-600 border-red-200 bg-red-50">{r.level}</div>
-                            </div>
-                            <p className="text-sm mt-2">Termin przeglądu: {r.nextService}</p>
-                            <p className="text-xs text-slate-500 mt-1">Opóźnienie: {Math.abs(r.diffDays)} dni</p>
-                          </div>
-                        ))
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium mb-2">🟢 Dzisiaj</p>
-                  <div className="space-y-3">
-                    {upcomingReminders.filter((r) => r.level === 'Dzisiaj').length === 0 ? (
-                      <p className="text-sm text-slate-500">Brak.</p>
-                    ) : (
-                      upcomingReminders
-                        .filter((r) => r.level === 'Dzisiaj')
-                        .map((r) => (
-                          <div key={`today-${r.id}`} className="rounded-xl border p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="font-medium">{r.client || 'Brak klienta'}</p>
-                                <p className="text-sm text-slate-500">{r.type}</p>
-                                {r.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {r.serial}</p> : null}
-                              </div>
-                              <div className="text-xs px-2 py-1 rounded-full border text-emerald-600 border-emerald-200 bg-emerald-50">{r.level}</div>
-                            </div>
-                            <p className="text-sm mt-2">Termin przeglądu: {r.nextService}</p>
-                            <p className="text-xs text-slate-500 mt-1">Przegląd dzisiaj</p>
-                          </div>
-                        ))
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium mb-2">🟠 Na ten tydzień</p>
-                  <div className="space-y-3">
-                    {upcomingReminders.filter((r) => r.level === 'Pilne').length === 0 ? (
-                      <p className="text-sm text-slate-500">Brak.</p>
-                    ) : (
-                      upcomingReminders
-                        .filter((r) => r.level === 'Pilne')
-                        .map((r) => (
-                          <div key={`urgent-${r.id}`} className="rounded-xl border p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="font-medium">{r.client || 'Brak klienta'}</p>
-                                <p className="text-sm text-slate-500">{r.type}</p>
-                                {r.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {r.serial}</p> : null}
-                              </div>
-                              <div className="text-xs px-2 py-1 rounded-full border text-orange-600 border-orange-200 bg-orange-50">{r.level}</div>
-                            </div>
-                            <p className="text-sm mt-2">Termin przeglądu: {r.nextService}</p>
-                            <p className="text-xs text-slate-500 mt-1">Za {r.diffDays} dni</p>
-                          </div>
-                        ))
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium mb-2">🟡 W ciągu 30 dni</p>
-                  <div className="space-y-3">
-                    {upcomingReminders.filter((r) => r.level === 'W ciągu 30 dni').length === 0 ? (
-                      <p className="text-sm text-slate-500">Brak.</p>
-                    ) : (
-                      upcomingReminders
-                        .filter((r) => r.level === 'W ciągu 30 dni')
-                        .map((r) => (
-                          <div key={`soon-${r.id}`} className="rounded-xl border p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="font-medium">{r.client || 'Brak klienta'}</p>
-                                <p className="text-sm text-slate-500">{r.type}</p>
-                                {r.serial ? <p className="text-xs text-slate-400 mt-1">Nr seryjny: {r.serial}</p> : null}
-                              </div>
-                              <div className="text-xs px-2 py-1 rounded-full border text-slate-600 border-slate-200 bg-slate-50">{r.level}</div>
-                            </div>
-                            <p className="text-sm mt-2">Termin przeglądu: {r.nextService}</p>
-                            <p className="text-xs text-slate-500 mt-1">Za {r.diffDays} dni</p>
-                          </div>
-                        ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
