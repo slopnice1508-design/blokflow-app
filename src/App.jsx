@@ -28,10 +28,11 @@ const CLIENTS_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(CLIENTS_SHEET
 const DEVICES_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(DEVICES_SHEET)}`;
 const SERVICE_API = `${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(SERVICE_SHEET)}`;
 
-function Card({ children, id, style }) {
+function Card({ children, id, style, onClick }) {
   return (
     <div
       id={id}
+      onClick={onClick}
       style={{
         background: '#fff',
         border: '1px solid #e5e7eb',
@@ -347,6 +348,172 @@ function ReminderBlock({ title, items, tone }) {
   );
 }
 
+function ClientCardModal({ client, devices, serviceTickets, onClose }) {
+  if (!client) return null;
+
+  const clientDevices = devices.filter((d) => (d.client || '').trim().toLowerCase() === (client.name || '').trim().toLowerCase());
+  const clientServices = serviceTickets.filter((s) => {
+    const byClient = (s.client || '').trim().toLowerCase() === (client.name || '').trim().toLowerCase();
+    const byDevice = clientDevices.some((d) => d.serial && s.device && d.serial.trim().toLowerCase() === s.device.trim().toLowerCase());
+    return byClient || byDevice;
+  });
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(15,23,42,0.45)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        zIndex: 9999,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 760,
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          background: '#fff',
+          borderRadius: 20,
+          boxShadow: '0 20px 60px rgba(15,23,42,0.2)',
+          padding: 24,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 700 }}>Karta klienta</div>
+            <div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>Wszystkie najważniejsze dane w jednym miejscu.</div>
+          </div>
+          <Button onClick={onClose}>Zamknij</Button>
+        </div>
+
+        <div style={{ display: 'grid', gap: 16 }}>
+          <Card>
+            <CardContent>
+              <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>{client.name || 'Klient bez nazwy'}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Telefon</div>
+                  <div style={{ fontSize: 14 }}>{client.phone || 'Brak'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Miasto</div>
+                  <div style={{ fontSize: 14 }}>{client.city || 'Brak'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Adres</div>
+                  <div style={{ fontSize: 14 }}>{client.address || 'Brak'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Źródło</div>
+                  <div style={{ fontSize: 14 }}>{client.source || 'Brak'}</div>
+                </div>
+              </div>
+              {client.note ? (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Notatka</div>
+                  <div style={{ fontSize: 14 }}>{client.note}</div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>Urządzenia klienta</div>
+                <Badge tone="gray">{clientDevices.length}</Badge>
+              </div>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {clientDevices.length === 0 ? (
+                  <div style={{ fontSize: 14, color: '#64748b' }}>Brak urządzeń przypisanych do tego klienta.</div>
+                ) : (
+                  clientDevices.map((d) => (
+                    <div key={d.id} style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ fontWeight: 600 }}>{d.type}</div>
+                          <div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>{d.pump || 'Brak modelu'}</div>
+                        </div>
+                        <Badge tone={d.reminder === 'Po terminie' ? 'red' : d.reminder === 'Dzisiaj' ? 'green' : d.reminder === 'Pilne' ? 'orange' : d.reminder === 'W ciągu 30 dni' ? 'gray' : 'default'}>
+                          {d.reminder || d.status || 'Aktywne'}
+                        </Badge>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, marginTop: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Numer seryjny</div>
+                          <div style={{ fontSize: 14 }}>{d.serial || 'Brak'}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Termin przeglądu</div>
+                          <div style={{ fontSize: 14 }}>{d.nextService || 'Brak'}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Status</div>
+                          <div style={{ fontSize: 14 }}>{d.status || 'Brak'}</div>
+                        </div>
+                      </div>
+                      {d.note ? (
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Notatka</div>
+                          <div style={{ fontSize: 14 }}>{d.note}</div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>Historia serwisów</div>
+                <Badge tone="gray">{clientServices.length}</Badge>
+              </div>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {clientServices.length === 0 ? (
+                  <div style={{ fontSize: 14, color: '#64748b' }}>Brak zgłoszeń serwisowych dla tego klienta.</div>
+                ) : (
+                  clientServices.map((s) => (
+                    <div key={s.id} style={{ border: '1px solid #e5e7eb', borderRadius: 14, padding: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ fontWeight: 600 }}>{s.kind}</div>
+                          <div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>{s.device || 'Brak urządzenia'}</div>
+                        </div>
+                        <Badge tone={s.priority === 'Pilny' ? 'red' : s.priority === 'Średni' ? 'orange' : 'gray'}>{s.priority || 'Niski'}</Badge>
+                      </div>
+                      {s.description ? <div style={{ fontSize: 14, marginTop: 10 }}>{s.description}</div> : null}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, marginTop: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Preferowany termin</div>
+                          <div style={{ fontSize: 14 }}>{s.preferredDate || 'Brak'}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Status</div>
+                          <div style={{ fontSize: 14 }}>{s.status || 'Nowe'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function BlokflowPanel() {
   const [filterType, setFilterType] = useState('Wszyscy');
   const [viewMode, setViewMode] = useState('admin');
@@ -360,6 +527,7 @@ export default function BlokflowPanel() {
   const [isConnected, setIsConnected] = useState(true);
   const [useLiveApi, setUseLiveApi] = useState(DEFAULT_USE_LIVE_API);
   const [submitState, setSubmitState] = useState({ type: '', message: '' });
+  const [selectedClient, setSelectedClient] = useState(null);
   const hasLoadedRef = useRef(false);
 
   const [clientForm, setClientForm] = useState({
@@ -664,6 +832,22 @@ export default function BlokflowPanel() {
     }
   }
 
+  const clientCards = filteredClients.map((c) => (
+    <Card
+      key={c.id}
+      onClick={() => setSelectedClient(c)}
+      style={{ cursor: 'pointer' }}
+    >
+      <CardContent>
+        <div style={{ fontWeight: 600 }}>{c.name}</div>
+        <div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>{c.city || 'Brak miasta'}</div>
+        {c.phone ? <div style={{ fontSize: 14, marginTop: 4 }}>{c.phone}</div> : null}
+        <div style={{ marginTop: 10 }}><Badge>{c.source}</Badge></div>
+        <div style={{ fontSize: 12, color: '#64748b', marginTop: 10 }}>Kliknij, aby otworzyć kartę klienta.</div>
+      </CardContent>
+    </Card>
+  ));
+
   return (
     <div style={{ padding: 24, background: '#f5f7fb', minHeight: '100vh', color: '#111827' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', display: 'grid', gap: 24 }}>
@@ -744,11 +928,7 @@ export default function BlokflowPanel() {
             )}
 
             {(window.__adminTab || 'instalatorzy') === 'klienci' && (
-              <div style={{ display: 'grid', gap: 12 }}>
-                {filteredClients.map((c) => (
-                  <Card key={c.id}><CardContent><div style={{ fontWeight: 600 }}>{c.name}</div><div style={{ fontSize: 14 }}>{c.city}</div>{c.phone ? <div style={{ fontSize: 14 }}>{c.phone}</div> : null}<div style={{ marginTop: 8 }}><Badge>{c.source}</Badge></div></CardContent></Card>
-                ))}
-              </div>
+              <div style={{ display: 'grid', gap: 12 }}>{clientCards}</div>
             )}
 
             {(window.__adminTab || 'instalatorzy') === 'urzadzenia' && (
@@ -784,6 +964,15 @@ export default function BlokflowPanel() {
                   <Button onClick={() => scrollToId('deviceForm')} style={{ textAlign: 'left' }}>Urządzenia</Button>
                   <Button onClick={() => scrollToId('serviceForm')} style={{ textAlign: 'left' }}>Serwis</Button>
                   <Button onClick={() => scrollToId('remindersSection')} style={{ textAlign: 'left' }}>Przypomnienia</Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent>
+                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Moi klienci</div>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  {filteredClients.length === 0 ? <div style={{ fontSize: 14, color: '#64748b' }}>Brak klientów do wyświetlenia.</div> : clientCards}
                 </div>
               </CardContent>
             </Card>
@@ -889,6 +1078,8 @@ export default function BlokflowPanel() {
           </div>
         )}
       </div>
+
+      <ClientCardModal client={selectedClient} devices={devices} serviceTickets={serviceTickets} onClose={() => setSelectedClient(null)} />
     </div>
   );
 }
