@@ -221,10 +221,7 @@ async function fetchSheetData(url) {
   });
 
   const rawText = await response.text();
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${rawText || 'Brak odpowiedzi serwera'}`);
-  }
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${rawText || 'Brak odpowiedzi serwera'}`);
 
   try {
     const parsed = JSON.parse(rawText);
@@ -245,10 +242,7 @@ async function postSheetData(payload) {
   });
 
   const rawText = await response.text();
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${rawText || 'Brak odpowiedzi serwera'}`);
-  }
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${rawText || 'Brak odpowiedzi serwera'}`);
 
   const parsed = JSON.parse(rawText);
   if (parsed && typeof parsed === 'object' && parsed.ok === false) {
@@ -267,13 +261,7 @@ function mapInstaller(row, index) {
     city: row['Miasto'] || '',
     region: row['Województwo'] || '',
     type: row['Typ instalatora'] || 'Pompy ciepła',
-    plan: toYes(row['status premium'])
-      ? 'Premium'
-      : toYes(row['status aktywny'])
-        ? 'Aktywny'
-        : toYes(row['status nowy'])
-          ? 'Nowy'
-          : 'Brak',
+    plan: toYes(row['status premium']) ? 'Premium' : toYes(row['status aktywny']) ? 'Aktywny' : toYes(row['status nowy']) ? 'Nowy' : 'Brak',
     registrationDate: row['Data rejestracji'] || '',
   };
 }
@@ -322,7 +310,6 @@ function mapServiceTicket(row, index) {
 
 function ReminderBlock({ title, items, tone }) {
   const toneMap = { red: 'red', orange: 'orange', green: 'green', gray: 'gray' };
-
   return (
     <div>
       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{title}</div>
@@ -407,41 +394,15 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
   }
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(15,23,42,0.45)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-        zIndex: 9999,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%',
-          maxWidth: 760,
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          background: '#fff',
-          borderRadius: 20,
-          boxShadow: '0 20px 60px rgba(15,23,42,0.2)',
-          padding: 24,
-        }}
-      >
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 9999 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 760, maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 20, boxShadow: '0 20px 60px rgba(15,23,42,0.2)', padding: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontSize: 24, fontWeight: 700 }}>Karta klienta</div>
             <div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>Wszystkie najważniejsze dane w jednym miejscu.</div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Button variant="primary" onClick={() => setShowServiceForm((prev) => !prev)}>
-              {showServiceForm ? 'Ukryj formularz serwisu' : 'Dodaj serwis'}
-            </Button>
+            <Button variant="primary" onClick={() => setShowServiceForm((prev) => !prev)}>{showServiceForm ? 'Ukryj formularz serwisu' : 'Dodaj serwis'}</Button>
             <Button onClick={onClose}>Zamknij</Button>
           </div>
         </div>
@@ -462,29 +423,23 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
                       <TextInput value={serviceDraft.serviceType} onChange={(e) => setServiceDraft((prev) => ({ ...prev, serviceType: e.target.value }))} placeholder="np. Przegląd" />
                     </div>
                   </div>
-
                   <div>
                     <FieldLabel>Urządzenie klienta</FieldLabel>
                     <SelectInput value={serviceDraft.deviceSerial} onChange={(e) => setServiceDraft((prev) => ({ ...prev, deviceSerial: e.target.value }))}>
                       <option value="">Wybierz urządzenie</option>
                       {clientDevices.map((d) => (
-                        <option key={d.id} value={d.serial || ''}>
-                          {d.type}{d.serial ? ` / ${d.serial}` : ''}
-                        </option>
+                        <option key={d.id} value={d.serial || ''}>{d.type}{d.serial ? ` / ${d.serial}` : ''}</option>
                       ))}
                     </SelectInput>
                   </div>
-
                   <div>
                     <FieldLabel>Następny przegląd</FieldLabel>
                     <TextInput type="date" value={serviceDraft.nextService} onChange={(e) => setServiceDraft((prev) => ({ ...prev, nextService: e.target.value }))} />
                   </div>
-
                   <div>
                     <FieldLabel>Notatka serwisowa</FieldLabel>
                     <TextArea placeholder="Co zostało zrobione, co wymaga obserwacji, jakie były uwagi" value={serviceDraft.note} onChange={(e) => setServiceDraft((prev) => ({ ...prev, note: e.target.value }))} />
                   </div>
-
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
                     <Button onClick={() => setShowServiceForm(false)}>Anuluj</Button>
                     <Button variant="primary" onClick={handleSubmitClientService}>Zapisz serwis</Button>
@@ -498,29 +453,12 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
             <CardContent>
               <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>{client.name || 'Klient bez nazwy'}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>
-                <div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Telefon</div>
-                  <div style={{ fontSize: 14 }}>{client.phone || 'Brak'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Miasto</div>
-                  <div style={{ fontSize: 14 }}>{client.city || 'Brak'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Adres</div>
-                  <div style={{ fontSize: 14 }}>{client.address || 'Brak'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Źródło</div>
-                  <div style={{ fontSize: 14 }}>{client.source || 'Brak'}</div>
-                </div>
+                <div><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Telefon</div><div style={{ fontSize: 14 }}>{client.phone || 'Brak'}</div></div>
+                <div><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Miasto</div><div style={{ fontSize: 14 }}>{client.city || 'Brak'}</div></div>
+                <div><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Adres</div><div style={{ fontSize: 14 }}>{client.address || 'Brak'}</div></div>
+                <div><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Źródło</div><div style={{ fontSize: 14 }}>{client.source || 'Brak'}</div></div>
               </div>
-              {client.note ? (
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Notatka</div>
-                  <div style={{ fontSize: 14 }}>{client.note}</div>
-                </div>
-              ) : null}
+              {client.note ? <div style={{ marginTop: 14 }}><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Notatka</div><div style={{ fontSize: 14 }}>{client.note}</div></div> : null}
             </CardContent>
           </Card>
 
@@ -541,30 +479,14 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
                           <div style={{ fontWeight: 600 }}>{d.type}</div>
                           <div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>{d.pump || 'Brak modelu'}</div>
                         </div>
-                        <Badge tone={d.reminder === 'Po terminie' ? 'red' : d.reminder === 'Dzisiaj' ? 'green' : d.reminder === 'Pilne' ? 'orange' : d.reminder === 'W ciągu 30 dni' ? 'gray' : 'default'}>
-                          {d.reminder || d.status || 'Aktywne'}
-                        </Badge>
+                        <Badge tone={d.reminder === 'Po terminie' ? 'red' : d.reminder === 'Dzisiaj' ? 'green' : d.reminder === 'Pilne' ? 'orange' : d.reminder === 'W ciągu 30 dni' ? 'gray' : 'default'}>{d.reminder || d.status || 'Aktywne'}</Badge>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, marginTop: 12 }}>
-                        <div>
-                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Numer seryjny</div>
-                          <div style={{ fontSize: 14 }}>{d.serial || 'Brak'}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Termin przeglądu</div>
-                          <div style={{ fontSize: 14 }}>{d.nextService || 'Brak'}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Status</div>
-                          <div style={{ fontSize: 14 }}>{d.status || 'Brak'}</div>
-                        </div>
+                        <div><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Numer seryjny</div><div style={{ fontSize: 14 }}>{d.serial || 'Brak'}</div></div>
+                        <div><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Termin przeglądu</div><div style={{ fontSize: 14 }}>{d.nextService || 'Brak'}</div></div>
+                        <div><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Status</div><div style={{ fontSize: 14 }}>{d.status || 'Brak'}</div></div>
                       </div>
-                      {d.note ? (
-                        <div style={{ marginTop: 12 }}>
-                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Notatka</div>
-                          <div style={{ fontSize: 14 }}>{d.note}</div>
-                        </div>
-                      ) : null}
+                      {d.note ? <div style={{ marginTop: 12 }}><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Notatka</div><div style={{ fontSize: 14 }}>{d.note}</div></div> : null}
                     </div>
                   ))
                 )}
@@ -593,14 +515,8 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
                       </div>
                       {s.description ? <div style={{ fontSize: 14, marginTop: 10 }}>{s.description}</div> : null}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, marginTop: 12 }}>
-                        <div>
-                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Preferowany termin</div>
-                          <div style={{ fontSize: 14 }}>{s.preferredDate || 'Brak'}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Status</div>
-                          <div style={{ fontSize: 14 }}>{s.status || 'Nowe'}</div>
-                        </div>
+                        <div><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Preferowany termin</div><div style={{ fontSize: 14 }}>{s.preferredDate || 'Brak'}</div></div>
+                        <div><div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Status</div><div style={{ fontSize: 14 }}>{s.status || 'Nowe'}</div></div>
                       </div>
                     </div>
                   ))
@@ -617,6 +533,7 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
 export default function BlokflowPanel() {
   const [filterType, setFilterType] = useState('Wszyscy');
   const [viewMode, setViewMode] = useState('admin');
+  const [adminTab, setAdminTab] = useState('instalatorzy');
   const [installers, setInstallers] = useState([]);
   const [clients, setClients] = useState([]);
   const [devices, setDevices] = useState(starterDevices);
@@ -630,33 +547,9 @@ export default function BlokflowPanel() {
   const [selectedClient, setSelectedClient] = useState(null);
   const hasLoadedRef = useRef(false);
 
-  const [clientForm, setClientForm] = useState({
-    name: '',
-    phone: '',
-    city: '',
-    address: '',
-    source: 'Własny klient',
-    note: '',
-  });
-
-  const [deviceForm, setDeviceForm] = useState({
-    type: 'BLOKFLOW Basic',
-    client: '',
-    serial: '',
-    status: 'Aktywne',
-    pump: '',
-    nextService: '',
-    note: '',
-  });
-
-  const [serviceForm, setServiceForm] = useState({
-    client: '',
-    device: '',
-    kind: 'Przegląd',
-    priority: 'Niski',
-    description: '',
-    preferredDate: '',
-  });
+  const [clientForm, setClientForm] = useState({ name: '', phone: '', city: '', address: '', source: 'Własny klient', note: '' });
+  const [deviceForm, setDeviceForm] = useState({ type: 'BLOKFLOW Basic', client: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
+  const [serviceForm, setServiceForm] = useState({ client: '', device: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '' });
 
   useEffect(() => {
     if (DEFAULT_USE_LIVE_API) {
@@ -667,7 +560,6 @@ export default function BlokflowPanel() {
 
   useEffect(() => {
     if (!useLiveApi || !isConnected || hasLoadedRef.current) return;
-
     let cancelled = false;
     hasLoadedRef.current = true;
 
@@ -700,7 +592,6 @@ export default function BlokflowPanel() {
     }
 
     loadAll();
-
     return () => {
       cancelled = true;
     };
@@ -709,37 +600,19 @@ export default function BlokflowPanel() {
   const filteredInstallers = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return installers;
-    return installers.filter((i) =>
-      [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan, i.type]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    );
+    return installers.filter((i) => [i.company, i.owner, i.city, i.region, i.phone, i.email, i.plan, i.type].filter(Boolean).join(' ').toLowerCase().includes(q));
   }, [installers, search]);
 
   const filteredClients = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return clients;
-    return clients.filter((c) =>
-      [c.name, c.city, c.phone, c.installer, c.source, c.address]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    );
+    return clients.filter((c) => [c.name, c.city, c.phone, c.installer, c.source, c.address].filter(Boolean).join(' ').toLowerCase().includes(q));
   }, [clients, search]);
 
   const filteredDevices = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return devices;
-    return devices.filter((d) =>
-      [d.type, d.client, d.installer, d.serial, d.status, d.pump]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    );
+    return devices.filter((d) => [d.type, d.client, d.installer, d.serial, d.status, d.pump].filter(Boolean).join(' ').toLowerCase().includes(q));
   }, [devices, search]);
 
   const installerQuickStats = useMemo(() => {
@@ -753,37 +626,20 @@ export default function BlokflowPanel() {
         const nextService = d.nextService || '';
         const diffDays = getServiceDiffDays(nextService);
         if (diffDays === null) return null;
-
-        let level = '';
-        if (diffDays < 0) level = 'Po terminie';
-        else if (diffDays === 0) level = 'Dzisiaj';
-        else if (diffDays <= 7) level = 'Pilne';
-        else if (diffDays <= 30) level = 'W ciągu 30 dni';
-        else return null;
-
-        return {
-          id: d.id,
-          client: d.client,
-          type: d.type,
-          serial: d.serial,
-          nextService,
-          diffDays,
-          level,
-        };
+        const level = diffDays < 0 ? 'Po terminie' : diffDays === 0 ? 'Dzisiaj' : diffDays <= 7 ? 'Pilne' : diffDays <= 30 ? 'W ciągu 30 dni' : '';
+        if (!level) return null;
+        return { id: d.id, client: d.client, type: d.type, serial: d.serial, nextService, diffDays, level };
       })
       .filter(Boolean)
       .sort((a, b) => a.diffDays - b.diffDays);
   }, [devices]);
 
-  const groupedReminders = useMemo(
-    () => ({
-      overdue: upcomingReminders.filter((r) => r.level === 'Po terminie'),
-      today: upcomingReminders.filter((r) => r.level === 'Dzisiaj'),
-      week: upcomingReminders.filter((r) => r.level === 'Pilne'),
-      month: upcomingReminders.filter((r) => r.level === 'W ciągu 30 dni'),
-    }),
-    [upcomingReminders]
-  );
+  const groupedReminders = useMemo(() => ({
+    overdue: upcomingReminders.filter((r) => r.level === 'Po terminie'),
+    today: upcomingReminders.filter((r) => r.level === 'Dzisiaj'),
+    week: upcomingReminders.filter((r) => r.level === 'Pilne'),
+    month: upcomingReminders.filter((r) => r.level === 'W ciągu 30 dni'),
+  }), [upcomingReminders]);
 
   function refreshLiveData() {
     hasLoadedRef.current = false;
@@ -828,16 +684,15 @@ export default function BlokflowPanel() {
           row: {
             'ID KLIENTA': record.id,
             'Imię i Nazwisko': record.name,
-            'Telefon': record.phone,
-            'Miasto': record.city,
-            'Adres': record.address,
-            'Instalator': record.installer,
+            Telefon: record.phone,
+            Miasto: record.city,
+            Adres: record.address,
+            Instalator: record.installer,
             'Źródło': record.source,
-            'Notatka': record.note,
+            Notatka: record.note,
           },
         });
       }
-
       setClients((prev) => [record, ...prev]);
       resetClientForm();
       setSubmitState({ type: 'success', message: 'Klient został zapisany.' });
@@ -862,6 +717,7 @@ export default function BlokflowPanel() {
       pump: deviceForm.pump.trim(),
       nextService: deviceForm.nextService.trim(),
       note: deviceForm.note.trim(),
+      reminder: getReminderLabel(deviceForm.nextService.trim()),
     };
 
     try {
@@ -871,16 +727,15 @@ export default function BlokflowPanel() {
           sheet: DEVICES_SHEET,
           row: {
             'Typ urządzenia': record.type,
-            'Klient': record.client,
+            Klient: record.client,
             'Numer seryjny': record.serial,
-            'Status': record.status,
+            Status: record.status,
             'Model / Pompa': record.pump,
             'Termin przeglądu': record.nextService,
-            'Notatka': record.note,
+            Notatka: record.note,
           },
         });
       }
-
       setDevices((prev) => [record, ...prev]);
       resetDeviceForm();
       setSubmitState({ type: 'success', message: 'Urządzenie zostało zapisane.' });
@@ -913,17 +768,16 @@ export default function BlokflowPanel() {
           sheet: SERVICE_SHEET,
           row: {
             'ID SERWISU': record.id,
-            'Klient': record.client,
-            'Urządzenie': record.device,
+            Klient: record.client,
+            Urządzenie: record.device,
             'Typ zgłoszenia': record.kind,
-            'Priorytet': record.priority,
-            'Opis': record.description,
+            Priorytet: record.priority,
+            Opis: record.description,
             'Preferowany termin': record.preferredDate,
-            'Status': record.status,
+            Status: record.status,
           },
         });
       }
-
       setServiceTickets((prev) => [record, ...prev]);
       resetServiceForm();
       setSubmitState({ type: 'success', message: 'Zgłoszenie serwisowe zostało zapisane.' });
@@ -962,13 +816,13 @@ export default function BlokflowPanel() {
           sheet: SERVICE_SHEET,
           row: {
             'ID SERWISU': newService.id,
-            'Klient': newService.client,
-            'Urządzenie': newService.device,
+            Klient: newService.client,
+            Urządzenie: newService.device,
             'Typ zgłoszenia': newService.kind,
-            'Priorytet': newService.priority,
-            'Opis': newService.description,
+            Priorytet: newService.priority,
+            Opis: newService.description,
             'Preferowany termin': newService.preferredDate,
-            'Status': newService.status,
+            Status: newService.status,
           },
         });
       }
@@ -976,17 +830,7 @@ export default function BlokflowPanel() {
       setServiceTickets((prev) => [newService, ...prev]);
 
       if (payload.deviceSerial && payload.nextService) {
-        setDevices((prev) =>
-          prev.map((device) =>
-            device.serial === payload.deviceSerial
-              ? {
-                  ...device,
-                  nextService: payload.nextService,
-                  reminder: getReminderLabel(payload.nextService),
-                }
-              : device
-          )
-        );
+        setDevices((prev) => prev.map((device) => device.serial === payload.deviceSerial ? { ...device, nextService: payload.nextService, reminder: getReminderLabel(payload.nextService) } : device));
       }
 
       setSubmitState({ type: 'success', message: 'Serwis został dodany z karty klienta.' });
@@ -1015,23 +859,17 @@ export default function BlokflowPanel() {
             <h1 style={{ fontSize: 32, fontWeight: 700, margin: 0 }}>BLOKFLOW PANEL</h1>
             <p style={{ fontSize: 14, color: '#64748b', marginTop: 8 }}>Jeden system, dwa widoki: admin i instalator.</p>
           </div>
-
           <div style={{ display: 'flex', gap: 8, padding: 4, border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff' }}>
             <Button variant={viewMode === 'admin' ? 'primary' : 'secondary'} onClick={() => setViewMode('admin')}>Panel admina</Button>
             <Button variant={viewMode === 'installer' ? 'primary' : 'secondary'} onClick={() => setViewMode('installer')}>Panel instalatora</Button>
           </div>
-
           <div style={{ minWidth: 260, maxWidth: 360, width: '100%' }}>
             <TextInput placeholder="Szukaj..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
 
         {submitState.message ? (
-          <Card>
-            <CardContent>
-              <div style={{ fontSize: 14, color: submitState.type === 'error' ? '#b91c1c' : '#047857' }}>{submitState.message}</div>
-            </CardContent>
-          </Card>
+          <Card><CardContent><div style={{ fontSize: 14, color: submitState.type === 'error' ? '#b91c1c' : '#047857' }}>{submitState.message}</div></CardContent></Card>
         ) : null}
 
         {viewMode === 'admin' ? (
@@ -1070,13 +908,13 @@ export default function BlokflowPanel() {
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {['instalatorzy', 'klienci', 'urzadzenia', 'serwis'].map((tab) => (
-                <Button key={tab} variant={tab === (window.__adminTab || 'instalatorzy') ? 'primary' : 'secondary'} onClick={() => { window.__adminTab = tab; setSearch((s) => s); }}>
+                <Button key={tab} variant={tab === adminTab ? 'primary' : 'secondary'} onClick={() => setAdminTab(tab)}>
                   {tab === 'instalatorzy' ? 'Instalatorzy' : tab === 'klienci' ? 'Klienci' : tab === 'urzadzenia' ? 'Urządzenia' : 'Serwis'}
                 </Button>
               ))}
             </div>
 
-            {(window.__adminTab || 'instalatorzy') === 'instalatorzy' && (
+            {adminTab === 'instalatorzy' && (
               <div style={{ display: 'grid', gap: 12 }}>
                 {loading.installers ? <Card><CardContent><div style={{ fontSize: 14, color: '#64748b' }}>Ładowanie instalatorów...</div></CardContent></Card> : null}
                 {errors.installers ? <Card><CardContent><div style={{ fontSize: 14, color: '#b91c1c' }}>Błąd pobierania instalatorów: {errors.installers}</div></CardContent></Card> : null}
@@ -1086,9 +924,9 @@ export default function BlokflowPanel() {
               </div>
             )}
 
-            {(window.__adminTab || 'instalatorzy') === 'klienci' && <div style={{ display: 'grid', gap: 12 }}>{clientCards}</div>}
+            {adminTab === 'klienci' && <div style={{ display: 'grid', gap: 12 }}>{clientCards}</div>}
 
-            {(window.__adminTab || 'instalatorzy') === 'urzadzenia' && (
+            {adminTab === 'urzadzenia' && (
               <div style={{ display: 'grid', gap: 12 }}>
                 {filteredDevices.map((d) => (
                   <Card key={d.id}><CardContent><div style={{ fontWeight: 600 }}>{d.type}</div><div style={{ fontSize: 14 }}>Klient: {d.client || 'Brak danych'}</div><div style={{ fontSize: 14 }}>Termin przeglądu: {d.nextService || 'Brak'}</div></CardContent></Card>
@@ -1096,7 +934,7 @@ export default function BlokflowPanel() {
               </div>
             )}
 
-            {(window.__adminTab || 'instalatorzy') === 'serwis' && (
+            {adminTab === 'serwis' && (
               <div style={{ display: 'grid', gap: 12 }}>
                 {serviceTickets.length === 0 ? <Card><CardContent><div style={{ fontSize: 14, color: '#64748b' }}>Brak zgłoszeń serwisowych.</div></CardContent></Card> : null}
                 {serviceTickets.map((s) => (
@@ -1152,10 +990,7 @@ export default function BlokflowPanel() {
                 <div style={{ fontSize: 18, fontWeight: 600 }}>Dodaj klienta</div>
                 <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.</div>
                 <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-                  <div>
-                    <FieldLabel>Imię i nazwisko / nazwa klienta</FieldLabel>
-                    <TextInput placeholder="np. Anna Nowak" value={clientForm.name} onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))} />
-                  </div>
+                  <div><FieldLabel>Imię i nazwisko / nazwa klienta</FieldLabel><TextInput placeholder="np. Anna Nowak" value={clientForm.name} onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))} /></div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
                     <div><FieldLabel>Telefon</FieldLabel><TextInput placeholder="np. 500 600 700" value={clientForm.phone} onChange={(e) => setClientForm((prev) => ({ ...prev, phone: e.target.value }))} /></div>
                     <div><FieldLabel>Miasto</FieldLabel><TextInput placeholder="np. Gdańsk" value={clientForm.city} onChange={(e) => setClientForm((prev) => ({ ...prev, city: e.target.value }))} /></div>
@@ -1236,13 +1071,7 @@ export default function BlokflowPanel() {
         )}
       </div>
 
-      <ClientCardModal
-        client={selectedClient}
-        devices={devices}
-        serviceTickets={serviceTickets}
-        onClose={() => setSelectedClient(null)}
-        onAddService={handleAddServiceFromClientCard}
-      />
+      <ClientCardModal client={selectedClient} devices={devices} serviceTickets={serviceTickets} onClose={() => setSelectedClient(null)} onAddService={handleAddServiceFromClientCard} />
     </div>
   );
 }
