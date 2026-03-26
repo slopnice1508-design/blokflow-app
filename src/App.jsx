@@ -285,6 +285,7 @@ function mapDevice(row, index) {
     id: row['ID URZĄDZENIA'] || row['ID URZADZENIA'] || `BLK-${index + 1}`,
     type: row['Typ'] || row['Typ urządzenia'] || row['Typ urzadzenia'] || 'BLOKFLOW',
     client: row['Klient'] || row['Imię i Nazwisko'] || row['Nazwa klienta'] || '',
+    clientId: row['ID KLIENTA'] || row['Klient ID'] || row['Client ID'] || '',
     installer: row['Instalator'] || row['Nazwa Firmy'] || '',
     serial: row['Numer seryjny'] || row['Nr seryjny'] || row['Serial'] || '',
     status: row['Status'] || 'Aktywne',
@@ -365,7 +366,11 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
   if (!client) return null;
 
   const clientName = (client.name || '').trim().toLowerCase();
-  const clientDevices = devices.filter((d) => (d.client || '').trim().toLowerCase() === clientName);
+  const clientDevices = devices.filter((d) => {
+    const byId = client.id && d.clientId && String(d.clientId) === String(client.id);
+    const byName = (d.client || '').trim().toLowerCase() === clientName;
+    return byId || byName;
+  });
   const clientServices = serviceTickets.filter((s) => {
     const byClient = (s.client || '').trim().toLowerCase() === clientName;
     const byDevice = clientDevices.some((d) => d.serial && s.device && d.serial.trim().toLowerCase() === s.device.trim().toLowerCase());
@@ -548,7 +553,7 @@ export default function BlokflowPanel() {
   const hasLoadedRef = useRef(false);
 
   const [clientForm, setClientForm] = useState({ name: '', phone: '', city: '', address: '', source: 'Własny klient', note: '' });
-  const [deviceForm, setDeviceForm] = useState({ type: 'BLOKFLOW Basic', client: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
+  const [deviceForm, setDeviceForm] = useState({ type: 'BLOKFLOW Basic', client: '', clientId: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
   const [serviceForm, setServiceForm] = useState({ client: '', device: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '' });
 
   useEffect(() => {
@@ -652,7 +657,7 @@ export default function BlokflowPanel() {
   }
 
   function resetDeviceForm() {
-    setDeviceForm({ type: 'BLOKFLOW Basic', client: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
+    setDeviceForm({ type: 'BLOKFLOW Basic', client: '', clientId: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
   }
 
   function resetServiceForm() {
@@ -703,7 +708,7 @@ export default function BlokflowPanel() {
 
   async function handleSaveDevice() {
     if (!deviceForm.client.trim() || !deviceForm.type.trim()) {
-      setSubmitState({ type: 'error', message: 'Uzupełnij klienta i typ urządzenia.' });
+      setSubmitState({ type: 'error', message: 'Wybierz klienta z listy i uzupełnij typ urządzenia.' });
       return;
     }
 
@@ -711,6 +716,7 @@ export default function BlokflowPanel() {
       id: makeId('BLK'),
       type: deviceForm.type.trim(),
       client: deviceForm.client.trim(),
+      clientId: deviceForm.clientId || '',
       installer: 'Moja firma instalatorska',
       serial: deviceForm.serial.trim(),
       status: deviceForm.status.trim() || 'Aktywne',
@@ -727,6 +733,7 @@ export default function BlokflowPanel() {
           sheet: DEVICES_SHEET,
           row: {
             'Typ urządzenia': record.type,
+            'ID KLIENTA': record.clientId,
             Klient: record.client,
             'Numer seryjny': record.serial,
             Status: record.status,
@@ -919,7 +926,28 @@ export default function BlokflowPanel() {
                 {loading.installers ? <Card><CardContent><div style={{ fontSize: 14, color: '#64748b' }}>Ładowanie instalatorów...</div></CardContent></Card> : null}
                 {errors.installers ? <Card><CardContent><div style={{ fontSize: 14, color: '#b91c1c' }}>Błąd pobierania instalatorów: {errors.installers}</div></CardContent></Card> : null}
                 {filteredInstallers.map((i) => (
-                  <Card key={i.id}><CardContent><div style={{ fontWeight: 600 }}>{i.company}</div>{i.owner ? <div style={{ fontSize: 14 }}>{i.owner}</div> : null}<div style={{ fontSize: 14 }}>{i.city}</div><div style={{ marginTop: 8 }}><Badge tone={i.plan === 'Premium' ? 'premium' : i.plan === 'Aktywny' ? 'active' : i.plan === 'Nowy' ? 'new' : 'default'}>{i.plan}</Badge></div></CardContent></Card>
+                  <Card key={i.id}>
+                    <CardContent>
+                      <div style={{ fontWeight: '600' }}>{i.company}</div>
+                      {i.owner ? <div style={{ fontSize: 14 }}>{i.owner}</div> : null}
+                      <div style={{ fontSize: 14 }}>{i.city}</div>
+                      <div style={{ marginTop: 8 }}>
+                        <Badge
+                          tone={
+                            i.plan === 'Premium'
+                              ? 'premium'
+                              : i.plan === 'Aktywny'
+                                ? 'active'
+                                : i.plan === 'Nowy'
+                                  ? 'new'
+                                  : 'default'
+                          }
+                        >
+                          {i.plan}
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             )}
@@ -929,16 +957,35 @@ export default function BlokflowPanel() {
             {adminTab === 'urzadzenia' && (
               <div style={{ display: 'grid', gap: 12 }}>
                 {filteredDevices.map((d) => (
-                  <Card key={d.id}><CardContent><div style={{ fontWeight: 600 }}>{d.type}</div><div style={{ fontSize: 14 }}>Klient: {d.client || 'Brak danych'}</div><div style={{ fontSize: 14 }}>Termin przeglądu: {d.nextService || 'Brak'}</div></CardContent></Card>
+                  <Card key={d.id}>
+                    <CardContent>
+                      <div style={{ fontWeight: '600' }}>{d.type}</div>
+                      <div style={{ fontSize: 14 }}>Klient: {d.client || 'Brak danych'}</div>
+                      <div style={{ fontSize: 14 }}>Termin przeglądu: {d.nextService || 'Brak'}</div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             )}
 
             {adminTab === 'serwis' && (
               <div style={{ display: 'grid', gap: 12 }}>
-                {serviceTickets.length === 0 ? <Card><CardContent><div style={{ fontSize: 14, color: '#64748b' }}>Brak zgłoszeń serwisowych.</div></CardContent></Card> : null}
+                {serviceTickets.length === 0 ? (
+                  <Card>
+                    <CardContent>
+                      <div style={{ fontSize: 14, color: '#64748b' }}>Brak zgłoszeń serwisowych.</div>
+                    </CardContent>
+                  </Card>
+                ) : null}
                 {serviceTickets.map((s) => (
-                  <Card key={s.id}><CardContent><div style={{ fontWeight: 600 }}>{s.kind}</div><div style={{ fontSize: 14 }}>Klient: {s.client}</div><div style={{ fontSize: 14 }}>Urządzenie: {s.device}</div><div style={{ fontSize: 14 }}>Priorytet: {s.priority}</div></CardContent></Card>
+                  <Card key={s.id}>
+                    <CardContent>
+                      <div style={{ fontWeight: '600' }}>{s.kind}</div>
+                      <div style={{ fontSize: 14 }}>Klient: {s.client}</div>
+                      <div style={{ fontSize: 14 }}>Urządzenie: {s.device}</div>
+                      <div style={{ fontSize: 14 }}>Priorytet: {s.priority}</div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             )}
@@ -953,7 +1000,7 @@ export default function BlokflowPanel() {
 
             <Card>
               <CardContent>
-                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Zakładki instalatora</div>
+                <div style={{ fontSize: 18, fontWeight: '600', marginBottom: 12 }}>Zakładki instalatora</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
                   <Button onClick={() => scrollToId('clientForm')} style={{ textAlign: 'left' }}>Klienci</Button>
                   <Button onClick={() => scrollToId('deviceForm')} style={{ textAlign: 'left' }}>Urządzenia</Button>
@@ -965,46 +1012,103 @@ export default function BlokflowPanel() {
 
             <Card>
               <CardContent>
-                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Moi klienci</div>
+                <div style={{ fontSize: 18, fontWeight: '600', marginBottom: 12 }}>Moi klienci</div>
                 <div style={{ display: 'grid', gap: 12 }}>
-                  {filteredClients.length === 0 ? <div style={{ fontSize: 14, color: '#64748b' }}>Brak klientów do wyświetlenia.</div> : clientCards}
+                  {filteredClients.length === 0 ? (
+                    <div style={{ fontSize: 14, color: '#64748b' }}>Brak klientów do wyświetlenia.</div>
+                  ) : (
+                    clientCards
+                  )}
                 </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardContent>
-                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Szybkie akcje instalatora</div>
+                <div style={{ fontSize: 18, fontWeight: '600', marginBottom: 12 }}>Szybkie akcje instalatora</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
-                  <Button variant="ghost" onClick={() => scrollToId('clientForm')} style={{ textAlign: 'left' }}>Dodaj klienta</Button>
-                  <Button onClick={() => scrollToId('deviceForm')} style={{ textAlign: 'left' }}>Dodaj urządzenie</Button>
-                  <Button onClick={() => scrollToId('serviceForm')} style={{ textAlign: 'left' }}>Zgłoś serwis</Button>
-                  <Button onClick={() => scrollToId('remindersSection')} style={{ textAlign: 'left' }}>Moje przypomnienia</Button>
-                  <Button onClick={refreshLiveData} style={{ textAlign: 'left', gridColumn: '1 / -1' }}>Odśwież dane</Button>
+                  <Button variant="ghost" onClick={() => scrollToId('clientForm')} style={{ textAlign: 'left' }}>
+                    Dodaj klienta
+                  </Button>
+                  <Button onClick={() => scrollToId('deviceForm')} style={{ textAlign: 'left' }}>
+                    Dodaj urządzenie
+                  </Button>
+                  <Button onClick={() => scrollToId('serviceForm')} style={{ textAlign: 'left' }}>
+                    Zgłoś serwis
+                  </Button>
+                  <Button onClick={() => scrollToId('remindersSection')} style={{ textAlign: 'left' }}>
+                    Moje przypomnienia
+                  </Button>
+                  <Button onClick={refreshLiveData} style={{ textAlign: 'left', gridColumn: '1 / -1' }}>
+                    Odśwież dane
+                  </Button>
                 </div>
               </CardContent>
             </Card>
 
             <Card id="clientForm">
               <CardContent>
-                <div style={{ fontSize: 18, fontWeight: 600 }}>Dodaj klienta</div>
-                <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.</div>
+                <div style={{ fontSize: 18, fontWeight: '600' }}>Dodaj klienta</div>
+                <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>
+                  Mobilny formularz dla instalatora — prosty, szybki i gotowy do spięcia z Google Sheets.
+                </div>
                 <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-                  <div><FieldLabel>Imię i nazwisko / nazwa klienta</FieldLabel><TextInput placeholder="np. Anna Nowak" value={clientForm.name} onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))} /></div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
-                    <div><FieldLabel>Telefon</FieldLabel><TextInput placeholder="np. 500 600 700" value={clientForm.phone} onChange={(e) => setClientForm((prev) => ({ ...prev, phone: e.target.value }))} /></div>
-                    <div><FieldLabel>Miasto</FieldLabel><TextInput placeholder="np. Gdańsk" value={clientForm.city} onChange={(e) => setClientForm((prev) => ({ ...prev, city: e.target.value }))} /></div>
+                  <div>
+                    <FieldLabel>Imię i nazwisko / nazwa klienta</FieldLabel>
+                    <TextInput
+                      placeholder="np. Anna Nowak"
+                      value={clientForm.name}
+                      onChange={(e) => setClientForm((prev) => ({ ...prev, name: e.target.value }))}
+                    />
                   </div>
-                  <div><FieldLabel>Adres montażu</FieldLabel><TextInput placeholder="Ulica, numer domu" value={clientForm.address} onChange={(e) => setClientForm((prev) => ({ ...prev, address: e.target.value }))} /></div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <div>
+                      <FieldLabel>Telefon</FieldLabel>
+                      <TextInput
+                        placeholder="np. 500 600 700"
+                        value={clientForm.phone}
+                        onChange={(e) => setClientForm((prev) => ({ ...prev, phone: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel>Miasto</FieldLabel>
+                      <TextInput
+                        placeholder="np. Gdańsk"
+                        value={clientForm.city}
+                        onChange={(e) => setClientForm((prev) => ({ ...prev, city: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <FieldLabel>Adres montażu</FieldLabel>
+                    <TextInput
+                      placeholder="Ulica, numer domu"
+                      value={clientForm.address}
+                      onChange={(e) => setClientForm((prev) => ({ ...prev, address: e.target.value }))}
+                    />
+                  </div>
                   <div>
                     <FieldLabel>Źródło klienta</FieldLabel>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {['Własny klient', 'Lead BLOKFLOW', 'Polecenie'].map((option) => (
-                        <Button key={option} variant={clientForm.source === option ? 'activePill' : 'pill'} onClick={() => setClientForm((prev) => ({ ...prev, source: option }))}>{option}</Button>
+                        <Button
+                          key={option}
+                          variant={clientForm.source === option ? 'activePill' : 'pill'}
+                          onClick={() => setClientForm((prev) => ({ ...prev, source: option }))}
+                        >
+                          {option}
+                        </Button>
                       ))}
                     </div>
                   </div>
-                  <div><FieldLabel>Notatka</FieldLabel><TextArea placeholder="Krótka informacja o kliencie, budynku lub planowanym montażu" value={clientForm.note} onChange={(e) => setClientForm((prev) => ({ ...prev, note: e.target.value }))} /></div>
+                  <div>
+                    <FieldLabel>Notatka</FieldLabel>
+                    <TextArea
+                      placeholder="Krótka informacja o kliencie, budynku lub planowanym montażu"
+                      value={clientForm.note}
+                      onChange={(e) => setClientForm((prev) => ({ ...prev, note: e.target.value }))}
+                    />
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
                     <Button onClick={resetClientForm}>Wyczyść</Button>
                     <Button variant="primary" onClick={handleSaveClient}>Zapisz klienta</Button>
@@ -1015,18 +1119,83 @@ export default function BlokflowPanel() {
 
             <Card id="deviceForm">
               <CardContent>
-                <div style={{ fontSize: 18, fontWeight: 600 }}>Dodaj urządzenie</div>
-                <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>Drugi krok po kliencie — rejestracja BLOKFLOW lub innego urządzenia z numerem seryjnym i statusem.</div>
+                <div style={{ fontSize: 18, fontWeight: '600' }}>Dodaj urządzenie</div>
+                <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>
+                  Drugi krok po kliencie — rejestracja BLOKFLOW lub innego urządzenia z numerem seryjnym i statusem.
+                </div>
                 <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-                  <div><FieldLabel>Typ urządzenia</FieldLabel><TextInput placeholder="np. BLOKFLOW Basic" value={deviceForm.type} onChange={(e) => setDeviceForm((prev) => ({ ...prev, type: e.target.value }))} /></div>
-                  <div><FieldLabel>Klient</FieldLabel><TextInput placeholder="np. Anna Nowak" value={deviceForm.client} onChange={(e) => setDeviceForm((prev) => ({ ...prev, client: e.target.value }))} /></div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
-                    <div><FieldLabel>Numer seryjny</FieldLabel><TextInput placeholder="np. BF-2026-001" value={deviceForm.serial} onChange={(e) => setDeviceForm((prev) => ({ ...prev, serial: e.target.value }))} /></div>
-                    <div><FieldLabel>Status</FieldLabel><TextInput placeholder="np. Aktywne" value={deviceForm.status} onChange={(e) => setDeviceForm((prev) => ({ ...prev, status: e.target.value }))} /></div>
+                  <div>
+                    <FieldLabel>Typ urządzenia</FieldLabel>
+                    <TextInput
+                      placeholder="np. BLOKFLOW Basic"
+                      value={deviceForm.type}
+                      onChange={(e) => setDeviceForm((prev) => ({ ...prev, type: e.target.value }))}
+                    />
                   </div>
-                  <div><FieldLabel>Model / pompa</FieldLabel><TextInput placeholder="np. Panasonic Aquarea 7 kW" value={deviceForm.pump} onChange={(e) => setDeviceForm((prev) => ({ ...prev, pump: e.target.value }))} /></div>
-                  <div><FieldLabel>Termin pierwszego przeglądu</FieldLabel><TextInput type="date" value={deviceForm.nextService} onChange={(e) => setDeviceForm((prev) => ({ ...prev, nextService: e.target.value }))} /></div>
-                  <div><FieldLabel>Notatka montażowa</FieldLabel><TextArea placeholder="Informacje o montażu, konfiguracji, miejscu ustawienia lub uwagach serwisowych" value={deviceForm.note} onChange={(e) => setDeviceForm((prev) => ({ ...prev, note: e.target.value }))} /></div>
+                  <div>
+                    <FieldLabel>Klient</FieldLabel>
+                    <SelectInput
+                      value={deviceForm.clientId}
+                      onChange={(e) => {
+                        const chosen = clients.find((client) => client.id === e.target.value);
+                        setDeviceForm((prev) => ({
+                          ...prev,
+                          clientId: e.target.value,
+                          client: chosen ? chosen.name : '',
+                        }));
+                      }}
+                    >
+                      <option value="">Wybierz klienta z listy</option>
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.id}>
+                          {client.name}
+                          {client.city ? ` / ${client.city}` : ''}
+                        </option>
+                      ))}
+                    </SelectInput>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <div>
+                      <FieldLabel>Numer seryjny</FieldLabel>
+                      <TextInput
+                        placeholder="np. BF-2026-001"
+                        value={deviceForm.serial}
+                        onChange={(e) => setDeviceForm((prev) => ({ ...prev, serial: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel>Status</FieldLabel>
+                      <TextInput
+                        placeholder="np. Aktywne"
+                        value={deviceForm.status}
+                        onChange={(e) => setDeviceForm((prev) => ({ ...prev, status: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <FieldLabel>Model / pompa</FieldLabel>
+                    <TextInput
+                      placeholder="np. Panasonic Aquarea 7 kW"
+                      value={deviceForm.pump}
+                      onChange={(e) => setDeviceForm((prev) => ({ ...prev, pump: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Termin pierwszego przeglądu</FieldLabel>
+                    <TextInput
+                      type="date"
+                      value={deviceForm.nextService}
+                      onChange={(e) => setDeviceForm((prev) => ({ ...prev, nextService: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Notatka montażowa</FieldLabel>
+                    <TextArea
+                      placeholder="Informacje o montażu, konfiguracji, miejscu ustawienia lub uwagach serwisowych"
+                      value={deviceForm.note}
+                      onChange={(e) => setDeviceForm((prev) => ({ ...prev, note: e.target.value }))}
+                    />
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
                     <Button onClick={resetDeviceForm}>Wyczyść</Button>
                     <Button variant="primary" onClick={handleSaveDevice}>Zapisz urządzenie</Button>
@@ -1037,17 +1206,61 @@ export default function BlokflowPanel() {
 
             <Card id="serviceForm">
               <CardContent>
-                <div style={{ fontSize: 18, fontWeight: 600 }}>Zgłoś serwis</div>
-                <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>Szybkie zgłoszenie przeglądu lub awarii dla istniejącego urządzenia.</div>
+                <div style={{ fontSize: 18, fontWeight: '600' }}>Zgłoś serwis</div>
+                <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>
+                  Szybkie zgłoszenie przeglądu lub awarii dla istniejącego urządzenia.
+                </div>
                 <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-                  <div><FieldLabel>Klient</FieldLabel><TextInput placeholder="np. Anna Nowak" value={serviceForm.client} onChange={(e) => setServiceForm((prev) => ({ ...prev, client: e.target.value }))} /></div>
-                  <div><FieldLabel>Urządzenie / nr seryjny</FieldLabel><TextInput placeholder="np. BF-2026-001" value={serviceForm.device} onChange={(e) => setServiceForm((prev) => ({ ...prev, device: e.target.value }))} /></div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
-                    <div><FieldLabel>Typ zgłoszenia</FieldLabel><TextInput placeholder="np. Przegląd / Awaria" value={serviceForm.kind} onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))} /></div>
-                    <div><FieldLabel>Priorytet</FieldLabel><TextInput placeholder="np. Niski / Pilny" value={serviceForm.priority} onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))} /></div>
+                  <div>
+                    <FieldLabel>Klient</FieldLabel>
+                    <TextInput
+                      placeholder="np. Anna Nowak"
+                      value={serviceForm.client}
+                      onChange={(e) => setServiceForm((prev) => ({ ...prev, client: e.target.value }))}
+                    />
                   </div>
-                  <div><FieldLabel>Opis problemu</FieldLabel><TextArea placeholder="Opisz problem lub zakres przeglądu" value={serviceForm.description} onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))} /></div>
-                  <div><FieldLabel>Preferowany termin</FieldLabel><TextInput type="date" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} /></div>
+                  <div>
+                    <FieldLabel>Urządzenie / nr seryjny</FieldLabel>
+                    <TextInput
+                      placeholder="np. BF-2026-001"
+                      value={serviceForm.device}
+                      onChange={(e) => setServiceForm((prev) => ({ ...prev, device: e.target.value }))}
+                    />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <div>
+                      <FieldLabel>Typ zgłoszenia</FieldLabel>
+                      <TextInput
+                        placeholder="np. Przegląd / Awaria"
+                        value={serviceForm.kind}
+                        onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel>Priorytet</FieldLabel>
+                      <TextInput
+                        placeholder="np. Niski / Pilny"
+                        value={serviceForm.priority}
+                        onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <FieldLabel>Opis problemu</FieldLabel>
+                    <TextArea
+                      placeholder="Opisz problem lub zakres przeglądu"
+                      value={serviceForm.description}
+                      onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Preferowany termin</FieldLabel>
+                    <TextInput
+                      type="date"
+                      value={serviceForm.preferredDate}
+                      onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))}
+                    />
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
                     <Button onClick={resetServiceForm}>Wyczyść</Button>
                     <Button variant="primary" onClick={handleSaveService}>Wyślij zgłoszenie</Button>
@@ -1058,7 +1271,7 @@ export default function BlokflowPanel() {
 
             <Card id="remindersSection">
               <CardContent>
-                <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Moje przypomnienia przeglądów</div>
+                <div style={{ fontSize: 18, fontWeight: '600', marginBottom: 12 }}>Moje przypomnienia przeglądów</div>
                 <div style={{ display: 'grid', gap: 16 }}>
                   <ReminderBlock title="🔴 Po terminie" items={groupedReminders.overdue} tone="red" />
                   <ReminderBlock title="🟢 Dzisiaj" items={groupedReminders.today} tone="green" />
@@ -1071,7 +1284,13 @@ export default function BlokflowPanel() {
         )}
       </div>
 
-      <ClientCardModal client={selectedClient} devices={devices} serviceTickets={serviceTickets} onClose={() => setSelectedClient(null)} onAddService={handleAddServiceFromClientCard} />
+      <ClientCardModal
+        client={selectedClient}
+        devices={devices}
+        serviceTickets={serviceTickets}
+        onClose={() => setSelectedClient(null)}
+        onAddService={handleAddServiceFromClientCard}
+      />
     </div>
   );
 }
