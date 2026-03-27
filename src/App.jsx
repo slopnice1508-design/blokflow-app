@@ -7,6 +7,7 @@ const starterDevices = [
     pump: 'Panasonic Aquarea 7 kW',
     serial: 'BF-2026-001',
     client: 'Anna Malinowska',
+    clientId: 'CLI-1',
     installer: 'Klima Serwis Gdańsk',
     nextService: '2027-02-10',
     status: 'Aktywne',
@@ -341,6 +342,7 @@ function ReminderBlock({ title, items, tone }) {
 }
 
 function ClientCardModal({ client, devices, serviceTickets, onClose, onAddService }) {
+  const safeText = (value) => String(value ?? '').trim().toLowerCase();
   const today = new Date();
   const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const [showServiceForm, setShowServiceForm] = useState(false);
@@ -365,20 +367,20 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
 
   if (!client) return null;
 
-  const clientName = (client.name || '').trim().toLowerCase();
-  const clientDevices = devices.filter((d) => {
-    const byId = client.id && d.clientId && String(d.clientId) === String(client.id);
-    const byName = (d.client || '').trim().toLowerCase() === clientName;
+  const clientName = safeText(client?.name);
+  const clientDevices = (Array.isArray(devices) ? devices : []).filter((d) => {
+    const byId = client?.id && d?.clientId && String(d.clientId) === String(client.id);
+    const byName = safeText(d?.client) === clientName;
     return byId || byName;
   });
-  const clientServices = serviceTickets.filter((s) => {
-    const byClient = (s.client || '').trim().toLowerCase() === clientName;
-    const byDevice = clientDevices.some((d) => d.serial && s.device && d.serial.trim().toLowerCase() === s.device.trim().toLowerCase());
+  const clientServices = (Array.isArray(serviceTickets) ? serviceTickets : []).filter((s) => {
+    const byClient = safeText(s?.client) === clientName;
+    const byDevice = clientDevices.some((d) => safeText(d?.serial) && safeText(d?.serial) === safeText(s?.device));
     return byClient || byDevice;
   });
 
   async function handleSubmitClientService() {
-    const chosenDevice = clientDevices.find((d) => (d.serial || '') === serviceDraft.deviceSerial);
+    const chosenDevice = clientDevices.find((d) => String(d?.serial || '') === String(serviceDraft.deviceSerial || ''));
     await onAddService({
       clientName: client.name || '',
       deviceSerial: serviceDraft.deviceSerial,
@@ -1130,78 +1132,73 @@ export default function BlokflowPanel() {
             </Card>
 
             <Card id="serviceForm">
-  <CardContent>
-    <div style={{ fontSize: 18, fontWeight: '600' }}>Zgłoś serwis</div>
-    <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>
-      Wybierz klienta i jego urządzenie – system zrobi resztę.
-    </div>
+              <CardContent>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>Zgłoś serwis</div>
+                <div style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>Wybierz klienta i jego urządzenie – system zrobi resztę.</div>
+                <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+                  <div>
+                    <FieldLabel>Klient</FieldLabel>
+                    <SelectInput
+                      value={serviceForm.clientId}
+                      onChange={(e) => {
+                        const chosen = clients.find((c) => c.id === e.target.value);
+                        setServiceForm((prev) => ({
+                          ...prev,
+                          clientId: e.target.value,
+                          client: chosen ? chosen.name : '',
+                          device: '',
+                          deviceSerial: '',
+                        }));
+                      }}
+                    >
+                      <option value="">Wybierz klienta</option>
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </SelectInput>
+                  </div>
 
-    <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+                  <div>
+                    <FieldLabel>Urządzenie</FieldLabel>
+                    <SelectInput
+                      value={serviceForm.deviceSerial}
+                      onChange={(e) => setServiceForm((prev) => ({ ...prev, deviceSerial: e.target.value }))}
+                    >
+                      <option value="">Wybierz urządzenie</option>
+                      {devices.filter((d) => String(d.clientId || '') === String(serviceForm.clientId || '')).map((d) => (
+                        <option key={d.id} value={d.serial}>{d.type} / {d.serial}</option>
+                      ))}
+                    </SelectInput>
+                  </div>
 
-      <div>
-        <FieldLabel>Klient</FieldLabel>
-        <SelectInput
-          value={serviceForm.clientId}
-          onChange={(e) => {
-            const chosen = clients.find((c) => c.id === e.target.value);
-            setServiceForm((prev) => ({
-              ...prev,
-              clientId: e.target.value,
-              client: chosen ? chosen.name : '',
-              device: '',
-              deviceSerial: ''
-            }));
-          }}
-        >
-          <option value="">Wybierz klienta</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </SelectInput>
-      </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <div>
+                      <FieldLabel>Typ</FieldLabel>
+                      <TextInput value={serviceForm.kind} onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))} />
+                    </div>
+                    <div>
+                      <FieldLabel>Priorytet</FieldLabel>
+                      <TextInput value={serviceForm.priority} onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))} />
+                    </div>
+                  </div>
 
-      <div>
-        <FieldLabel>Urządzenie</FieldLabel>
-        <SelectInput
-          value={serviceForm.deviceSerial}
-          onChange={(e) => setServiceForm((prev) => ({ ...prev, deviceSerial: e.target.value }))}
-        >
-          <option value="">Wybierz urządzenie</option>
-          {devices.filter(d => d.clientId === serviceForm.clientId).map((d) => (
-            <option key={d.id} value={d.serial}>{d.type} / {d.serial}</option>
-          ))}
-        </SelectInput>
-      </div>
+                  <div>
+                    <FieldLabel>Opis</FieldLabel>
+                    <TextArea value={serviceForm.description} onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))} />
+                  </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
-        <div>
-          <FieldLabel>Typ</FieldLabel>
-          <TextInput value={serviceForm.kind} onChange={(e) => setServiceForm((prev) => ({ ...prev, kind: e.target.value }))} />
-        </div>
-        <div>
-          <FieldLabel>Priorytet</FieldLabel>
-          <TextInput value={serviceForm.priority} onChange={(e) => setServiceForm((prev) => ({ ...prev, priority: e.target.value }))} />
-        </div>
-      </div>
+                  <div>
+                    <FieldLabel>Termin</FieldLabel>
+                    <TextInput type="date" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} />
+                  </div>
 
-      <div>
-        <FieldLabel>Opis</FieldLabel>
-        <TextArea value={serviceForm.description} onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))} />
-      </div>
-
-      <div>
-        <FieldLabel>Termin</FieldLabel>
-        <TextInput type="date" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
-        <Button onClick={resetServiceForm}>Wyczyść</Button>
-        <Button variant="primary" onClick={handleSaveService}>Zapisz serwis</Button>
-      </div>
-
-    </div>
-  </CardContent>
-</Card>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
+                    <Button onClick={resetServiceForm}>Wyczyść</Button>
+                    <Button variant="primary" onClick={handleSaveService}>Zapisz serwis</Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             <Card id="remindersSection">
               <CardContent>
