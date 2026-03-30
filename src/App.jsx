@@ -305,6 +305,7 @@ function mapDevice(row, index) {
 }
 
 function mapServiceTicket(row, index) {
+  const nextService = row['Następny przegląd'] || row['Nastepny przeglad'] || '';
   return {
     id: row['ID SERWISU'] || `SER-${index + 1}`,
     client: row['Klient'] || '',
@@ -313,6 +314,7 @@ function mapServiceTicket(row, index) {
     priority: row['Priorytet'] || 'Niski',
     description: row['Opis'] || '',
     preferredDate: row['Preferowany termin'] || '',
+    nextService,
     status: row['Status'] || 'Nowe',
   };
 }
