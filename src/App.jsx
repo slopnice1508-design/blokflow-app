@@ -562,7 +562,7 @@ export default function BlokflowPanel() {
   const hasLoadedRef = useRef(false);
 
   const [clientForm, setClientForm] = useState({ name: '', phone: '', city: '', address: '', source: 'Własny klient', note: '' });
-  const [deviceForm, setDeviceForm] = useState({ type: 'BLOKFLOW Basic', client: '', clientId: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
+  const [deviceForm, setDeviceForm] = useState({ type: 'BLOKFLOW Basic', client: '', clientId: '', serial: '', status: 'Aktywne', pump: '', nextService: '', reminderCycle: '12', note: '' });
   const [serviceForm, setServiceForm] = useState({ client: '', clientId: '', device: '', deviceSerial: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '', nextService: '' });
 
   useEffect(() => {
@@ -1126,6 +1126,14 @@ export default function BlokflowPanel() {
                   <div>
                     <FieldLabel>Model / pompa</FieldLabel>
                     <TextInput placeholder="np. Panasonic Aquarea 7 kW" value={deviceForm.pump} onChange={(e) => setDeviceForm((prev) => ({ ...prev, pump: e.target.value }))} />
+                  </div>
+                  <div>
+                    <FieldLabel>Cykl przypomnienia</FieldLabel>
+                    <SelectInput value={deviceForm.reminderCycle} onChange={(e) => setDeviceForm((prev) => ({ ...prev, reminderCycle: e.target.value }))}>
+                      <option value="3">Co 3 miesiące</option>
+                      <option value="6">Co 6 miesięcy</option>
+                      <option value="12">Co 12 miesięcy</option>
+                    </SelectInput>
                   </div>
                   <div>
                     <FieldLabel>Termin pierwszego przeglądu</FieldLabel>
