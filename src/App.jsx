@@ -209,6 +209,13 @@ function getReminderLabel(value) {
   return '';
 }
 
+function addMonthsToDateString(value, months = 12) {
+  const parsed = parseDateOnly(value);
+  if (!parsed) return '';
+  const shifted = new Date(parsed.getFullYear(), parsed.getMonth() + months, parsed.getDate());
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-${String(shifted.getDate()).padStart(2, '0')}`;
+}
+
 function scrollToId(id) {
   const node = document.getElementById(id);
   if (node) node.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -351,7 +358,7 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
     serviceType: 'Przegląd',
     note: '',
     deviceSerial: '',
-    nextService: '',
+    nextService: addMonthsToDateString(todayString, 12),
   });
 
   useEffect(() => {
@@ -361,7 +368,7 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
       serviceType: 'Przegląd',
       note: '',
       deviceSerial: '',
-      nextService: '',
+      nextService: addMonthsToDateString(todayString, 12),
     });
   }, [client]);
 
@@ -396,7 +403,7 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
       serviceType: 'Przegląd',
       note: '',
       deviceSerial: '',
-      nextService: '',
+      nextService: addMonthsToDateString(todayString, 12),
     });
   }
 
@@ -423,7 +430,7 @@ function ClientCardModal({ client, devices, serviceTickets, onClose, onAddServic
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
                     <div>
                       <FieldLabel>Data serwisu</FieldLabel>
-                      <TextInput type="date" value={serviceDraft.serviceDate} onChange={(e) => setServiceDraft((prev) => ({ ...prev, serviceDate: e.target.value }))} />
+                      <TextInput type="date" value={serviceDraft.serviceDate} onChange={(e) => setServiceDraft((prev) => ({ ...prev, serviceDate: e.target.value, nextService: addMonthsToDateString(e.target.value, 12) || prev.nextService }))} />
                     </div>
                     <div>
                       <FieldLabel>Typ serwisu</FieldLabel>
@@ -556,7 +563,7 @@ export default function BlokflowPanel() {
 
   const [clientForm, setClientForm] = useState({ name: '', phone: '', city: '', address: '', source: 'Własny klient', note: '' });
   const [deviceForm, setDeviceForm] = useState({ type: 'BLOKFLOW Basic', client: '', clientId: '', serial: '', status: 'Aktywne', pump: '', nextService: '', note: '' });
-  const [serviceForm, setServiceForm] = useState({ client: '', clientId: '', device: '', deviceSerial: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '' });
+  const [serviceForm, setServiceForm] = useState({ client: '', clientId: '', device: '', deviceSerial: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '', nextService: '' });
 
   useEffect(() => {
     if (DEFAULT_USE_LIVE_API) {
@@ -663,7 +670,7 @@ export default function BlokflowPanel() {
   }
 
   function resetServiceForm() {
-    setServiceForm({ client: '', clientId: '', device: '', deviceSerial: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '' });
+    setServiceForm({ client: '', clientId: '', device: '', deviceSerial: '', kind: 'Przegląd', priority: 'Niski', description: '', preferredDate: '', nextService: '' });
   }
 
   async function handleSaveClient() {
@@ -767,6 +774,7 @@ export default function BlokflowPanel() {
       priority: serviceForm.priority.trim(),
       description: serviceForm.description.trim(),
       preferredDate: serviceForm.preferredDate.trim(),
+      nextService: serviceForm.nextService.trim(),
       status: 'Nowe',
     };
 
@@ -783,11 +791,15 @@ export default function BlokflowPanel() {
             Priorytet: record.priority,
             Opis: record.description,
             'Preferowany termin': record.preferredDate,
+            'Następny przegląd': record.nextService,
             Status: record.status,
           },
         });
       }
       setServiceTickets((prev) => [record, ...prev]);
+      if (record.device && record.nextService) {
+        setDevices((prev) => prev.map((device) => device.serial === record.device ? { ...device, nextService: record.nextService, reminder: getReminderLabel(record.nextService) } : device));
+      }
       resetServiceForm();
       setSubmitState({ type: 'success', message: 'Zgłoszenie serwisowe zapisane poprawnie.' });
     } catch (error) {
@@ -1148,6 +1160,7 @@ export default function BlokflowPanel() {
                           client: chosen ? chosen.name : '',
                           device: '',
                           deviceSerial: '',
+                          nextService: '',
                         }));
                       }}
                     >
@@ -1189,7 +1202,12 @@ export default function BlokflowPanel() {
 
                   <div>
                     <FieldLabel>Termin</FieldLabel>
-                    <TextInput type="date" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value }))} />
+                    <TextInput type="date" value={serviceForm.preferredDate} onChange={(e) => setServiceForm((prev) => ({ ...prev, preferredDate: e.target.value, nextService: addMonthsToDateString(e.target.value, 12) || prev.nextService }))} />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Następny przegląd</FieldLabel>
+                    <TextInput type="date" value={serviceForm.nextService} onChange={(e) => setServiceForm((prev) => ({ ...prev, nextService: e.target.value }))} />
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
